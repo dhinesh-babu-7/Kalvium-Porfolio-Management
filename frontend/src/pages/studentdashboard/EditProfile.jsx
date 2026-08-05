@@ -27,11 +27,21 @@ import {
 } from "lucide-react";
 
 import { supabase } from "../../lib/supabase.js";
+const [image, setImage] = useState(null);
+const [preview, setPreview] = useState("");
 import kalviumLogo from "../../assets/kalvium-logo.svg";
 import "./EditProfile.css";
 
 import DashboardTab from "./DashboardTab.jsx";
 import { getProfile, updateProfile } from "../../api/routes/StudentDashboard/profile.js";
+
+
+    <input
+      type="file"
+      accept="image/*"
+      onChange={(e) => setImage(e.target.files[0])}
+    />
+
 
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard },
@@ -61,7 +71,27 @@ export default function ProfileTab({
   profileData,
   isLoading: initialLoading = false,
   onProfileChange
-}) {
+}) 
+
+   { if(error){
+
+        console.log(error);
+
+        return null;
+
+    }
+
+    const {data}=supabase.storage
+
+        .from("profile-images")
+
+        .getPublicUrl(fileName);
+
+    return data.publicUrl;
+
+}
+
+{
   const [activeNav, setActiveNav] = useState("Profile");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [profile, setProfile] = useState(profileData || {});
@@ -100,13 +130,47 @@ export default function ProfileTab({
     setToastMessage(msg);
   };
 
+  <>
+  <input
+    id="profile-upload"
+    type="file"
+    accept="image/*"
+    style={{ display: "none" }}
+    onChange={(e) => {
+      const file = e.target.files[0];
+
+      if (file) {
+        setImage(file);
+        setPreview(URL.createObjectURL(file));
+      }
+    }}
+  />
+
+  <button
+    type="button"
+    className="pm-photo-edit"
+    onClick={() => document.getElementById("profile-upload").click()}
+  >
+    <Upload size={12} />
+  </button>
+</>
+
+
+
   useEffect(() => {
     let isMounted = true;
 
     async function loadAuthAndProfile() {
       setIsLoading(true);
       try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const { data, error } = await supabase.storage
+          .from("profile-images")
+          .upload(fileName, image, {
+            upsert: true,
+          });
+
+      console.log("Upload data:", data);
+      console.log("Upload error:", error);
 
         if (authError) {
           console.error("Supabase Auth error:", authError.message);
@@ -430,8 +494,44 @@ export default function ProfileTab({
                   <>
                     <div className="pm-profile-photo-container">
                       <div className="pm-profile-photo">
-                        <User size={38} strokeWidth={1.5} />
-                      </div>
+
+          <img
+              src={preview || "/default-avatar.png"}
+              alt="Profile"
+              className="pm-profile-img"
+          />
+
+          <input
+              id="profile-upload"
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+              
+                  const file = e.target.files[0];
+              
+                  if (!file) return;
+              
+                  setImage(file);
+              
+                  setPreview(URL.createObjectURL(file));
+              
+              }}
+          />
+
+    <button
+        type="button"
+        className="pm-photo-edit"
+        onClick={() =>
+            document
+                .getElementById("profile-upload")
+                .click()
+        }
+    >
+        Upload
+    </button>
+
+</div>
                       <button
                         type="button"
                         className="pm-photo-edit"
@@ -701,17 +801,45 @@ function Field({
   );
 }
 
-function FormSection({ title, icon: Icon, children }) {
-  return (
-    <div className="pm-section">
-      <div className="pm-section-title">
-        <Icon size={16} />
-        <h3>{title}</h3>
-      </div>
-      {children}
-    </div>
-  );
-}
+const uploadProfileImage = async () => {
+  if (!image) {
+    return profile.avatar_url || "";
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    alert("Please log in again.");
+    return "";
+  }
+
+  const extension = image.name.split(".").pop();
+
+  const fileName = `${user.id}.${extension}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("profile-images")
+    .upload(fileName, image, {
+      upsert: true,
+    });
+
+  if (uploadError) {
+    console.error(uploadError);
+    alert(uploadError.message);
+    return "";
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage
+    .from("profile-images")
+    .getPublicUrl(fileName);
+
+  return publicUrl;
+};
 
 function FormSkeleton({ count }) {
   return (

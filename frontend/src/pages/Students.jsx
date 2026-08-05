@@ -57,25 +57,21 @@ export default function Students() {
     }
 
 
-    const formattedStudents = data.map((student)=>({
+const formattedStudents = data.map((student) => ({
+  id: student.user_id,
 
-      id: student.id,
+  name: student.name || "Unknown",
 
-      name: student.name || "Unknown",
+  role: student.title || "Student",
 
-      role: student.title || "Student",
+  avatar: student.avatar_url || "/default-avatar.png",
 
-      skills: [
-        student.github ? "GitHub" : null,
-        student.leetcode ? "LeetCode" : null,
-        student.linkedin ? "LinkedIn" : null
-      ].filter(Boolean),
-
-
-      avatar:
-        "https://i.pravatar.cc/150?u=" + student.user_id
-
-    }));
+  skills: [
+    student.github ? "GitHub" : null,
+    student.leetcode ? "LeetCode" : null,
+    student.linkedin ? "LinkedIn" : null,
+  ].filter(Boolean),
+}));
 
 
     setStudentsData(formattedStudents);
@@ -119,6 +115,7 @@ export default function Students() {
         pages.push(<span key="dots-start" className="page-dots">...</span>);
       }
     }
+
 
     showPages.forEach(page => {
       pages.push(
@@ -221,7 +218,11 @@ export default function Students() {
           : /* Render Actual Student Cards */
             currentStudents.map((student) => (
               <div className="student-card" key={student.id}>
-                <img src={student.avatar} alt={student.name} className="student-avatar" />
+                <img
+                  src={student.avatar}
+                  alt={student.name}
+                  className="student-avatar"
+                />
                 <h3 className="student-name">{student.name}</h3>
                 <p className="student-role">{student.role}</p>
                 
