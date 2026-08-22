@@ -337,10 +337,9 @@ function Leaderboard() {
         </div>
 
         <p>
-          Ranked by verified LeetCode problems solved &
-          total points scored. Rapid consecutive solves
-          (under 2 mins) are automatically held in{" "}
-          <strong>Mentor Evaluation Queue</strong> before
+          Rapid or suspicious consecutive solves are automatically 
+          flagged by AI and held in the
+          <strong> Mentor Evaluation Queue</strong> before
           point allocation.
         </p>
 
