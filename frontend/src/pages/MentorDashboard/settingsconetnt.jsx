@@ -44,7 +44,7 @@ export default function SettingsContent({ profile }) {
       try {
         setLoading(true);
         const fetchedSquads = await getSquads();
-        setSquads(fetchedSquads || []);
+        setSquads((fetchedSquads || []).map((squadId) => String(squadId)));
       } catch (error) {
         console.error("Failed to load squads:", error);
         showToast("Failed to load squad preferences.", "error");

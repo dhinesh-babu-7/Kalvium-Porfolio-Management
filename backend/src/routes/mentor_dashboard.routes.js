@@ -24,6 +24,17 @@ const reviewLimiter = rateLimit({
   },
 });
 
+const saveSquadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: "Too many requests. Please try again later.",
+  },
+});
+
 // ============================================================
 // AUTHENTICATION
 // ============================================================
@@ -104,6 +115,222 @@ const requireAuth = async (req, res, next) => {
     });
   }
 };
+
+// ============================================================
+// SQUAD MANAGEMENT
+// ============================================================
+
+router.get("/getsquads", requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await req.adminSupabase
+      .from("mentor_squads")
+      .select("squad_id")
+      .eq("mentor_user_id", req.user.id);
+
+    if (error) {
+      console.error("[MENTOR SQUADS] Fetch error:", error);
+      return res.status(400).json({ success: false, error: error.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      squads: (data || []).map((item) => item.squad_id),
+    });
+  } catch (error) {
+    console.error("[MENTOR SQUADS] Fetch exception:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error",
+    });
+  }
+});
+
+router.post(
+  "/savesquad",
+  saveSquadLimiter,
+  requireAuth,
+  async (req, res) => {
+    try {
+      const { squads } = req.body;
+
+      if (!Array.isArray(squads)) {
+        return res.status(400).json({
+          success: false,
+          error: "Squads must be an array",
+        });
+      }
+
+      const squadList = [
+        ...new Set(
+          squads.map((squadId) => Number(squadId)).filter(Number.isInteger),
+        ),
+      ];
+
+      if (squadList.length !== squads.length) {
+        return res.status(400).json({
+          success: false,
+          error: "Squads must contain valid numeric IDs",
+        });
+      }
+
+      const db = req.adminSupabase;
+      const mentorUserId = req.user.id;
+
+      const { error: deleteError } = await db
+        .from("mentor_squads")
+        .delete()
+        .eq("mentor_user_id", mentorUserId);
+
+      if (deleteError) {
+        console.error("[MENTOR SQUADS] Delete error:", deleteError);
+        return res.status(400).json({
+          success: false,
+          error: deleteError.message,
+        });
+      }
+
+      if (squadList.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: "All squad assignments cleared",
+          data: [],
+        });
+      }
+
+      const { data, error: insertError } = await db
+        .from("mentor_squads")
+        .insert(
+          squadList.map((squadId) => ({
+            mentor_user_id: mentorUserId,
+            squad_id: squadId,
+          })),
+        )
+        .select();
+
+      if (insertError) {
+        console.error("[MENTOR SQUADS] Insert error:", insertError);
+        return res.status(400).json({
+          success: false,
+          error: insertError.message,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Squads saved successfully",
+        data,
+      });
+    } catch (error) {
+      console.error("[MENTOR SQUADS] Save exception:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Internal server error",
+      });
+    }
+  },
+);
+
+router.get("/students", requireAuth, async (req, res) => {
+  try {
+    const db = req.adminSupabase;
+    const { data: mentorSquads, error: squadError } = await db
+      .from("mentor_squads")
+      .select("squad_id")
+      .eq("mentor_user_id", req.user.id);
+
+    if (squadError) {
+      return res.status(400).json({ success: false, error: squadError.message });
+    }
+
+    const squadIds = (mentorSquads || []).map((item) => item.squad_id);
+    const requestedSquadId = req.query.squad_id;
+    if (requestedSquadId !== undefined) {
+      const squadId = Number(requestedSquadId);
+      if (!Number.isInteger(squadId) || !squadIds.includes(squadId)) {
+        return res.status(403).json({ success: false, error: "You are not assigned to this squad" });
+      }
+      squadIds.splice(0, squadIds.length, squadId);
+    }
+
+    if (squadIds.length === 0) {
+      return res.status(200).json({ success: true, count: 0, students: [] });
+    }
+
+    const { data: profiles, error: profileError } = await db
+      .from("profiles")
+      .select("*")
+      .in("squad_id", squadIds);
+    if (profileError) {
+      return res.status(400).json({ success: false, error: profileError.message });
+    }
+
+    const studentIds = (profiles || []).map((profile) => profile.user_id).filter(Boolean);
+    const { data: leaderboard, error: leaderboardError } = studentIds.length
+      ? await db.from("leetcode_leaderboard").select("*").in("user_id", studentIds)
+      : { data: [], error: null };
+    if (leaderboardError) {
+      return res.status(400).json({ success: false, error: leaderboardError.message });
+    }
+
+    const leaderboardMap = new Map((leaderboard || []).map((row) => [String(row.user_id), row]));
+    const students = (profiles || []).map((profile) => ({
+      ...profile,
+      ...(leaderboardMap.get(String(profile.user_id)) || {}),
+      id: profile.user_id || profile.id,
+      student_user_id: profile.user_id || profile.id,
+    }));
+
+    return res.status(200).json({ success: true, count: students.length, students });
+  } catch (error) {
+    console.error("[MENTOR STUDENTS] Fetch exception:", error);
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+router.get("/assigned-students", requireAuth, async (req, res) => {
+  try {
+    const db = req.adminSupabase;
+    const { data: assignments, error: assignmentError } = await db
+      .from("squad_students")
+      .select("squad_id, student_user_id, assigned_at")
+      .eq("mentor_user_id", req.user.id);
+    if (assignmentError) {
+      return res.status(400).json({ success: false, error: assignmentError.message });
+    }
+    if (!assignments?.length) {
+      return res.status(200).json({ success: true, students: [] });
+    }
+
+    const studentIds = assignments.map((assignment) => assignment.student_user_id);
+    const [{ data: profiles, error: profileError }, { data: leaderboard, error: leaderboardError }] = await Promise.all([
+      db.from("profiles").select("*").in("user_id", studentIds),
+      db.from("leetcode_leaderboard").select("*").in("user_id", studentIds),
+    ]);
+    if (profileError || leaderboardError) {
+      const error = profileError || leaderboardError;
+      return res.status(400).json({ success: false, error: error.message });
+    }
+
+    const profileMap = new Map((profiles || []).map((profile) => [String(profile.user_id), profile]));
+    const leaderboardMap = new Map((leaderboard || []).map((row) => [String(row.user_id), row]));
+    const students = assignments.map((assignment) => {
+      const profile = profileMap.get(String(assignment.student_user_id)) || {};
+      return {
+        ...profile,
+        ...(leaderboardMap.get(String(assignment.student_user_id)) || {}),
+        id: profile.user_id || profile.id || assignment.student_user_id,
+        student_user_id: assignment.student_user_id,
+        squad_id: assignment.squad_id ?? profile.squad_id,
+        assigned_at: assignment.assigned_at,
+      };
+    });
+
+    return res.status(200).json({ success: true, students });
+  } catch (error) {
+    console.error("[MENTOR ASSIGNED STUDENTS] Fetch exception:", error);
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
 
 // ============================================================
 // HELPER: GET STUDENTS MENTOR CAN REVIEW
