@@ -1,10 +1,6 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
-
-import {
-  createAuthedSupabaseClient,
-  supabase,
-} from "../config/supabase.js";
+import { createAuthedSupabaseClient, supabase } from "../config/supabase.js";
 
 const router = express.Router();
 
@@ -103,11 +99,9 @@ const requireAuth = async (req, res, next) => {
       error: authError,
     } = await supabase.auth.getUser(token);
 
-    if (authError || !user) {
-      return res.status(401).json({
-        error: "Invalid or expired token",
-      });
-    }
+        if (authError || !user) {
+            return res.status(401).json({ error: "Invalid or expired token" });
+        }
 
     req.user = user;
     req.authedSupabase =
