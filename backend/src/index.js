@@ -1,56 +1,62 @@
 import express from "express";
-import cors from "cors";
 import dotenv from "dotenv";
+import cors from "cors";
 
 import publicRoutes from "./routes/public.routes.js";
-import studentDashboardRoutes from "./routes/student_dashboard.routes.js";
+import dashboardRoutes from "./routes/student_dashboard.routes.js";
 import mentorDashboardRoutes from "./routes/mentor_dashboard.routes.js";
-import cronRoutes from "./routes/cron.routes.js";
+import cronJobs from "./routes/cron.routes.js";
 
 dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 8000;
+
+// Trust Render proxy
+app.set("trust proxy", 1);
+
+// Allowed origins
+const envOrigins = (process.env.ORIGIN || "")
+  .split(",")
+  .map((url) => url.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://kalvium-porfolio.vercel.app", 
+  ...envOrigins,
+];
 
 app.use(
   cors({
-    origin: true,
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".vercel.app")
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 app.use("/public", publicRoutes);
-app.use("/student/dashboard", studentDashboardRoutes);
+app.use("/student/dashboard", dashboardRoutes);
 app.use("/mentor/dashboard", mentorDashboardRoutes);
-app.use("/cron", cronRoutes);
+app.use("/cron/", cronJobs);
 
 app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "Kalvium Portfolio Management API is running",
-  });
+  res.send("Backend is working");
 });
-
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: "Route not found",
-    path: req.originalUrl,
-  });
-});
-
-app.use((error, req, res, next) => {
-  console.error("[GLOBAL ERROR]", error);
-
-  res.status(500).json({
-    success: false,
-    error: "Internal server error",
-  });
-});
-
-const PORT = process.env.PORT || 8000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

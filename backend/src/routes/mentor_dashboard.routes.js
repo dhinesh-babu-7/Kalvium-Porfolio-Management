@@ -1,11 +1,6 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
-
-import {
-  createAuthedSupabaseClient,
-  supabase,
-  supabaseAdmin,
-} from "../config/supabase.js";
+import { createAuthedSupabaseClient, supabase } from "../config/supabase.js";
 
 const router = express.Router();
 
@@ -15,13 +10,10 @@ const router = express.Router();
 
 const reviewLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 20,
+  message: { error: "Too many requests. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    error: "Too many review requests. Please try again later.",
-  },
 });
 
 const saveSquadLimiter = rateLimit({
@@ -1056,13 +1048,26 @@ const getMentorReviewStudents = async (
       .in("squad_id", squadIds);
 
     if (error) {
-      throw new Error(
-        `Failed to load squad students: ${error.message}`
-      );
+      console.error("Fetch Squads Error:", error);
+      return res.status(400).json({ error: error.message });
     }
 
-    squadProfiles = data || [];
+    const squads = data ? data.map((item) => item.squad_id) : [];
+
+    return res.status(200).json({
+      success: true,
+      squads,
+    });
+  } catch (error) {
+    console.error("Server Error:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
+});
+
+router.post("/savesquad", saveSquadLimiter, requireAuth, async (req, res) => {
+  try {
+    const mentorUserId = req.user.id;
+    const { squads } = req.body;
 
   const studentMap = new Map();
 
@@ -1072,21 +1077,37 @@ const getMentorReviewStudents = async (
       continue;
     }
 
-    const studentId = String(
-      assignment.student_user_id
-    );
+    if (squadList.length > 0) {
+      const recordsToInsert = squadList.map((squadId) => ({
+        mentor_user_id: mentorUserId,
+        squad_id: Number(squadId),
+      }));
 
-    studentMap.set(studentId, {
-      student_user_id:
-        assignment.student_user_id,
+      const { data, error: insertError } = await db
+        .from("mentor_squads")
+        .insert(recordsToInsert)
+        .select();
 
-      squad_id:
-        assignment.squad_id ?? null,
+      if (insertError) {
+        console.error("Insert Error:", insertError);
+        return res.status(400).json({ error: insertError.message });
+      }
 
-      assigned_at:
-        assignment.assigned_at ?? null,
+      return res
+        .status(200)
+        .json({ success: true, message: "Squads saved successfully", data });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "All squad assignments cleared",
+      data: [],
     });
+  } catch (error) {
+    console.error("Server Error:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
+});
 
   // Students belonging to mentor's squads
   for (const profile of squadProfiles || []) {
@@ -1103,10 +1124,9 @@ const getMentorReviewStudents = async (
         squad_id:
           profile.squad_id ?? null,
 
-        assigned_at: null,
-      });
+    if (assignedSquadIds.length === 0) {
+      return res.status(200).json({ success: true, count: 0, students: [] });
     }
-  }
 
   return {
     squadIds,
@@ -1183,27 +1203,69 @@ const updateStudentReviewStatus = async (
       `Failed to count rejected submissions: ${rejectedError.message}`
     );
   }
+});
 
-  const hasPendingReviews =
-    Number(pendingCount || 0) > 0;
+// ==========================================
+// INDIVIDUAL STUDENT ROUTES (squad_students)
+// ==========================================
 
-  const hasRejectedReviews =
-    Number(rejectedCount || 0) > 0;
+router.get("/assigned-students", requireAuth, async (req, res) => {
+  try {
+    const mentorUserId = req.user.id;
+    const db = req.authedSupabase;
 
-  let isSuspended = false;
-  let suspensionReason = null;
+    // Step 1: Fetch assignments directly
+    const { data: assignments, error: assignError } = await db
+      .from("squad_students")
+      .select("squad_id, student_user_id, assigned_at")
+      .eq("mentor_user_id", mentorUserId);
+
+    if (assignError) {
+      console.error("Fetch Assigned Students Error:", assignError);
+      return res.status(400).json({ error: assignError.message });
+    }
+
+    if (!assignments || assignments.length === 0) {
+      return res.status(200).json({ success: true, students: [] });
+    }
 
   if (hasRejectedReviews) {
     isSuspended = true;
 
-    suspensionReason =
-      "Rejected for suspicious submission patterns";
-  } else if (hasPendingReviews) {
-    isSuspended = true;
+    if (profileError) {
+      console.error("Fetch Profiles Error:", profileError);
+      return res.status(400).json({ error: profileError.message });
+    }
 
-    suspensionReason =
-      "Pending mentor review for suspicious submission patterns";
-  }
+    // Step 3: Fetch activity stats from leetcode_leaderboard
+    const { data: leaderboardData } = await db
+      .from("leetcode_leaderboard")
+      .select("*")
+      .in("user_id", studentIds);
+
+    const leaderboardMap = createLeaderboardMap(leaderboardData);
+
+    // Step 4: Merge profiles + leaderboard stats and normalize
+    const assignedStudents = assignments.map((assignment) => {
+      const profile =
+        profiles?.find(
+          (p) => String(p.user_id) === String(assignment.student_user_id),
+        ) || {};
+      const stats =
+        leaderboardMap.get(String(assignment.student_user_id)) ||
+        leaderboardMap.get(String(profile.id)) ||
+        {};
+
+      const mergedData = { ...profile, ...stats };
+      const normalized = normalizeStudentActivity(mergedData);
+
+      return {
+        ...normalized,
+        student_user_id: assignment.student_user_id,
+        squad_id: assignment.squad_id || profile.squad_id,
+        assigned_at: assignment.assigned_at,
+      };
+    });
 
   const { error: leaderboardError } = await db
     .from("leetcode_leaderboard")
@@ -1221,6 +1283,7 @@ const updateStudentReviewStatus = async (
       `Failed to update leaderboard status: ${leaderboardError.message}`
     );
   }
+});
 
   return {
     pendingCount:
@@ -1277,28 +1340,10 @@ router.get(
         )
         .filter(Boolean);
 
-      const {
-        data: pendingSubmissions,
-        error: submissionError,
-      } = await db
-        .from("leetcode_submissions")
-        .select(`
-          id,
-          user_id,
-          submission_id,
-          title_slug,
-          difficulty,
-          submitted_at,
-          flag_reason,
-          review_status,
-          status,
-          created_at
-        `)
-        .in("user_id", studentIds)
-        .eq("review_status", "pending")
-        .order("submitted_at", {
-          ascending: false,
-        });
+    const { data: assignments, error: assignmentError } = await db
+      .from("squad_students")
+      .select("student_user_id, squad_id, assigned_at")
+      .eq("mentor_user_id", mentorUserId);
 
       if (submissionError) {
         return res.status(400).json({
@@ -1530,17 +1575,11 @@ router.get(
           score:
             Number(leaderboard.score) || 0,
 
-          is_suspended:
-            Boolean(
-              leaderboard.is_suspended
-            ),
+        total_solved: leaderboard.total_solved || 0,
 
-          suspension_reason:
-            leaderboard.suspension_reason ||
-            null,
+        score: leaderboard.score || 0,
 
-          pending_review_count:
-            submissions.length,
+        pending_review_count: studentPendingSubmissions.length,
 
           pending_submissions:
             submissions,
@@ -1564,25 +1603,18 @@ router.get(
         error
       );
 
-      return res.status(500).json({
-        success: false,
-        error:
-          error.message ||
-          "Internal server error",
-      });
-    }
+    return res.status(500).json({
+      error: "Internal server error",
+    });
   }
-);
+});
 
-// ============================================================
+// ==========================================
 // APPROVE MENTOR REVIEW
-//
-// PATCH /leetcode-review/:studentUserId/approve
-// ============================================================
+// ==========================================
 
 router.patch(
   "/leetcode-review/:studentUserId/approve",
-  reviewLimiter,
   requireAuth,
   async (req, res) => {
     try {
@@ -1598,11 +1630,9 @@ router.patch(
           studentUserId
         );
 
-      if (!assignment) {
-        return res.status(403).json({
-          success: false,
-          error:
-            "You are not authorized to review this student",
+      if (pendingError) {
+        return res.status(400).json({
+          error: pendingError.message,
         });
       }
 
@@ -1624,8 +1654,7 @@ router.patch(
 
       if (updateError) {
         return res.status(400).json({
-          success: false,
-          error: updateError.message,
+          error: error.message,
         });
       }
 
@@ -1641,50 +1670,29 @@ router.patch(
           db,
           studentUserId
         );
+      }
 
       return res.status(200).json({
         success: true,
-
-        message:
-          "Review approved successfully",
-
-        student_user_id:
-          studentUserId,
-
-        approved_count:
-          updated.length,
-
-        remaining_pending:
-          reviewStatus.hasPendingReviews,
-
-        is_suspended:
-          reviewStatus.isSuspended,
+        message: "Review approved successfully",
+        updated: data,
       });
     } catch (error) {
-      console.error(
-        "[MENTOR REVIEW] Approve error:",
-        error
-      );
+      console.error("Approve Review Server Error:", error);
 
       return res.status(500).json({
-        success: false,
-        error:
-          error.message ||
-          "Internal server error",
+        error: "Internal server error",
       });
     }
-  }
+  },
 );
 
-// ============================================================
+// ==========================================
 // REJECT MENTOR REVIEW
-//
-// PATCH /leetcode-review/:studentUserId/reject
-// ============================================================
+// ==========================================
 
 router.patch(
   "/leetcode-review/:studentUserId/reject",
-  reviewLimiter,
   requireAuth,
   async (req, res) => {
     try {
@@ -1700,11 +1708,9 @@ router.patch(
           studentUserId
         );
 
-      if (!assignment) {
-        return res.status(403).json({
-          success: false,
-          error:
-            "You are not authorized to review this student",
+      if (pendingError) {
+        return res.status(400).json({
+          error: pendingError.message,
         });
       }
 
@@ -1724,8 +1730,7 @@ router.patch(
 
       if (updateError) {
         return res.status(400).json({
-          success: false,
-          error: updateError.message,
+          error: error.message,
         });
       }
 
@@ -1741,43 +1746,22 @@ router.patch(
           db,
           studentUserId
         );
+      }
 
       return res.status(200).json({
         success: true,
-
         message:
-          "Review rejected successfully",
-
-        student_user_id:
-          studentUserId,
-
-        rejected_count:
-          updated.length,
-
-        is_suspended:
-          reviewStatus.isSuspended,
-
-        suspension_reason:
-          reviewStatus.suspensionReason,
+          "Suspicious submissions rejected - Student suspended from leaderboard",
+        updated: data,
       });
     } catch (error) {
-      console.error(
-        "[MENTOR REVIEW] Reject error:",
-        error
-      );
+      console.error("Reject Review Server Error:", error);
 
       return res.status(500).json({
-        success: false,
-        error:
-          error.message ||
-          "Internal server error",
+        error: "Internal server error",
       });
     }
-  }
+  },
 );
-
-// ============================================================
-// DEFAULT EXPORT
-// ============================================================
 
 export default router;

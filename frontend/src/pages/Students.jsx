@@ -3,6 +3,8 @@ import "./Students.css";
 import { getAllStudents } from "../api/routes/Public/StudentInfo";
 import { useNavigate } from "react-router-dom";
 
+const ITEMS_PER_PAGE = 12;
+
 function LazyAvatar({ src, alt }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [imgSrc, setImgSrc] = useState(src);
@@ -55,7 +57,6 @@ export default function Students() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSquad, setSelectedSquad] = useState("all");
   const [sortOrder, setSortOrder] = useState("asc");
-  const itemsPerPage = 12;
 
   const availableSquads = Array.from(
     new Set(studentsData.map((student) => student.squad_id).filter(Boolean))
@@ -66,33 +67,34 @@ export default function Students() {
     const matchesSquad =
       selectedSquad === "all" || String(student.squad_id) === selectedSquad;
 
-    return matchesSquad && (
-      student.name.toLowerCase().includes(query) ||
-      student.role.toLowerCase().includes(query) ||
-      (student.skills || []).some((skill) =>
-        skill.toLowerCase().includes(query)
-      )
+    return (
+      matchesSquad &&
+      (student.name.toLowerCase().includes(query) ||
+        student.role.toLowerCase().includes(query) ||
+        (student.skills || []).some((skill) =>
+          skill.toLowerCase().includes(query)
+        ))
     );
   });
 
   const sortedStudents = [...filteredStudents].sort((firstStudent, secondStudent) => {
-    const nameComparison = firstStudent.name.localeCompare(secondStudent.name, undefined, {
-      sensitivity: "base",
-    });
+    const nameComparison = firstStudent.name.localeCompare(
+      secondStudent.name,
+      undefined,
+      { sensitivity: "base" }
+    );
 
     return sortOrder === "asc" ? nameComparison : -nameComparison;
   });
 
   const totalItems = sortedStudents.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
 
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalItems);
   const currentStudents = sortedStudents.slice(startIndex, endIndex);
 
-  const itemsToRenderCount = isLoading
-    ? itemsPerPage
-    : currentStudents.length;
+  const itemsToRenderCount = isLoading ? ITEMS_PER_PAGE : currentStudents.length;
 
   // Fetch students
   useEffect(() => {
@@ -111,20 +113,16 @@ export default function Students() {
 
         const formattedStudents = students.map((student) => ({
           user_id: student.user_id,
+          squad_id: String(student.squad_id ?? student.squadId ?? ""),
           name: student.name || "Unknown",
           role: student.title || student.role || "Student",
-
-          // Used for Squad 138 / Squad 139 filtering
-          squad_id: String(
-            student.squad_id ?? student.squadId ?? ""
-          ),
 
           avatar:
             student.avatar_url && student.avatar_url.trim() !== ""
               ? student.avatar_url
               : `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                student.name || "Student"
-              )}&background=0D8ABC&color=fff&size=256`,
+                  student.name || "Student"
+                )}&background=0D8ABC&color=fff&size=256`,
 
           skills: [
             student.github ? "GitHub" : null,
@@ -176,27 +174,20 @@ export default function Students() {
     let showPages = [1, 2, 3];
 
     if (currentPage > 2) {
-      showPages = [
-        currentPage - 1,
-        currentPage,
-        currentPage + 1,
-      ].filter((p) => p < totalPages);
+      showPages = [currentPage - 1, currentPage, currentPage + 1].filter(
+        (p) => p < totalPages
+      );
     }
 
     if (currentPage === totalPages && totalPages > 2) {
-      showPages = [
-        totalPages - 2,
-        totalPages - 1,
-      ].filter((p) => p > 1);
+      showPages = [totalPages - 2, totalPages - 1].filter((p) => p > 1);
     }
 
     if (showPages[0] > 1) {
       pages.push(
         <button
           key={1}
-          className={`page-btn ${
-            currentPage === 1 ? "active" : ""
-          }`}
+          className={`page-btn ${currentPage === 1 ? "active" : ""}`}
           onClick={() => handlePageChange(1)}
           aria-label="Go to page 1"
         >
@@ -217,9 +208,7 @@ export default function Students() {
       pages.push(
         <button
           key={page}
-          className={`page-btn ${
-            currentPage === page ? "active" : ""
-          }`}
+          className={`page-btn ${currentPage === page ? "active" : ""}`}
           onClick={() => handlePageChange(page)}
           aria-label={`Go to page ${page}`}
         >
@@ -240,9 +229,7 @@ export default function Students() {
       pages.push(
         <button
           key={totalPages}
-          className={`page-btn ${
-            currentPage === totalPages ? "active" : ""
-          }`}
+          className={`page-btn ${currentPage === totalPages ? "active" : ""}`}
           onClick={() => handlePageChange(totalPages)}
           aria-label={`Go to page ${totalPages}`}
         >
@@ -318,69 +305,52 @@ export default function Students() {
 
       {/* Students Grid */}
       <div className="students-grid">
-        {isLoading ? (
-          Array.from({
-            length: itemsToRenderCount,
-          }).map((_, index) => (
-            <div
-              className="student-card skeleton-card"
-              key={`skeleton-${index}`}
-            >
-              <div className="skeleton skeleton-badge" />
-              <div className="skeleton skeleton-avatar" />
-              <div className="skeleton skeleton-name" />
-              <div className="skeleton skeleton-role" />
-
-              <div className="student-skills">
-                <div className="skeleton skeleton-skill" />
-                <div className="skeleton skeleton-skill" />
-                <div className="skeleton skeleton-skill" />
-              </div>
-
-              <div className="skeleton skeleton-btn" />
-            </div>
-          ))
-        ) : (
-          currentStudents.map((student) => (
-            <div
-              className="student-card"
-              key={student.user_id}
-            >
-              <LazyAvatar
-                src={student.avatar}
-                alt={student.name}
-              />
-
-              <h3 className="student-name">
-                {student.name}
-              </h3>
-
-              <p className="student-role">
-                {student.role}
-              </p>
-
-              <div className="student-skills">
-                {student.skills.map((skill, index) => (
-                  <span
-                    key={index}
-                    className="skill-tag"
-                  >
-                    {skill}
-                  </span>
-                ))}
-              </div>
-
-              <button
-                className="view-profile-btn"
-                onClick={() =>
-                  navigate(`/portfolio/${student.user_id}`)
-                }
+        {isLoading
+          ? Array.from({
+              length: itemsToRenderCount,
+            }).map((_, index) => (
+              <div
+                className="student-card skeleton-card"
+                key={`skeleton-${index}`}
               >
-                View Profile
-              </button>
-            </div>
-          ))
-        )}
+                <div className="skeleton skeleton-badge" />
+                <div className="skeleton skeleton-avatar" />
+                <div className="skeleton skeleton-name" />
+                <div className="skeleton skeleton-role" />
+
+                <div className="student-skills">
+                  <div className="skeleton skeleton-skill" />
+                  <div className="skeleton skeleton-skill" />
+                  <div className="skeleton skeleton-skill" />
+                </div>
+
+                <div className="skeleton skeleton-btn" />
+              </div>
+            ))
+          : currentStudents.map((student) => (
+              <div className="student-card" key={student.user_id}>
+                <LazyAvatar src={student.avatar} alt={student.name} />
+
+                <h3 className="student-name">{student.name}</h3>
+
+                <p className="student-role">{student.role}</p>
+
+                <div className="student-skills">
+                  {student.skills.map((skill, index) => (
+                    <span key={index} className="skill-tag">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+
+                <button
+                  className="view-profile-btn"
+                  onClick={() => navigate(`/portfolio/${student.user_id}`)}
+                >
+                  View Profile
+                </button>
+              </div>
+            ))}
       </div>
 
       {/* Pagination */}
@@ -388,9 +358,7 @@ export default function Students() {
         <div className="pagination">
           <button
             className="page-btn nav-btn"
-            onClick={() =>
-              handlePageChange(currentPage - 1)
-            }
+            onClick={() => handlePageChange(currentPage - 1)}
             disabled={currentPage === 1}
             aria-label="Previous Page"
           >
@@ -401,9 +369,7 @@ export default function Students() {
 
           <button
             className="page-btn nav-btn"
-            onClick={() =>
-              handlePageChange(currentPage + 1)
-            }
+            onClick={() => handlePageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
             aria-label="Next Page"
           >
