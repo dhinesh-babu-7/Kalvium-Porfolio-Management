@@ -1,0 +1,434 @@
+.pp-page {
+    --red: #E8342A;
+    --red-soft: #FDECEB;
+    --ink: #111827;
+    --body: #374151;
+    --muted: #6B7280;
+    --line: #E5E7EB;
+    --bg: #F3F4F6;
+    --card: #FFFFFF;
+    --sans: "Inter", "Helvetica Neue", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+
+    min-height: 100%;
+    background: var(--bg);
+    font-family: var(--sans);
+    color: var(--body);
+    padding: 48px 24px;
+    box-sizing: border-box;
+}
+
+.pp-page * {
+    box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+    .pp-page {
+        padding: 20px 12px;
+    }
+}
+
+.pp-card {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(17, 24, 39, 0.04), 0 12px 32px -12px rgba(17, 24, 39, 0.10);
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 268px 1fr;
+}
+
+@media (max-width: 860px) {
+    .pp-card {
+        grid-template-columns: 1fr;
+        border-radius: 12px;
+    }
+}
+
+/* ---------- Header (spans full card on mobile via order) ---------- */
+.pp-header {
+    grid-column: 1 / -1;
+    padding: 40px 40px 28px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+@media (max-width: 640px) {
+    .pp-header {
+        padding: 24px 20px 20px;
+        flex-wrap: wrap;
+    }
+}
+
+.pp-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pp-logo-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    background: var(--red);
+    flex-shrink: 0;
+}
+
+.pp-brand-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+}
+
+.pp-updated-pill {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--muted);
+    background: #F9FAFB;
+    border: 1px solid var(--line);
+    padding: 6px 12px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+/* ---------- Sidebar nav ---------- */
+.pp-sidebar {
+    border-right: 1px solid var(--line);
+    padding: 28px 20px 40px;
+}
+
+@media (max-width: 860px) {
+    .pp-sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+        padding: 16px 20px;
+    }
+}
+
+.pp-nav-toggle {
+    display: none;
+    width: 100%;
+    text-align: left;
+    background: #F9FAFB;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    padding: 11px 14px;
+    cursor: pointer;
+}
+
+.pp-nav-toggle .pp-caret {
+    float: right;
+    color: var(--muted);
+    transition: transform 0.15s ease;
+}
+
+.pp-nav-toggle[aria-expanded="true"] .pp-caret {
+    transform: rotate(180deg);
+}
+
+@media (max-width: 860px) {
+    .pp-nav-toggle {
+        display: block;
+    }
+}
+
+.pp-toc-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px 10px;
+}
+
+.pp-toc {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+@media (max-width: 860px) {
+    .pp-toc-label {
+        display: none;
+    }
+
+    .pp-toc {
+        display: none;
+        margin-top: 10px;
+    }
+
+    .pp-toc.open {
+        display: block;
+    }
+}
+
+.pp-toc li+li {
+    margin-top: 2px;
+}
+
+.pp-toc a {
+    display: block;
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border-left: 2px solid transparent;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.pp-toc a:hover {
+    background: #F9FAFB;
+    color: var(--ink);
+}
+
+.pp-toc a.active {
+    background: var(--red-soft);
+    color: var(--red);
+    border-left-color: var(--red);
+    font-weight: 600;
+}
+
+/* ---------- Main content ---------- */
+.pp-main {
+    padding: 36px 44px 64px;
+    min-width: 0;
+}
+
+@media (max-width: 640px) {
+    .pp-main {
+        padding: 24px 20px 48px;
+    }
+}
+
+.pp-h1 {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    margin: 0 0 12px;
+}
+
+.pp-intro p {
+    font-size: 15px;
+    color: var(--body);
+    margin: 0 0 14px;
+}
+
+.pp-intro a,
+.pp-content a {
+    color: var(--red);
+    text-decoration: none;
+    font-weight: 500;
+    border-bottom: 1px solid rgba(232, 52, 42, 0.28);
+}
+
+.pp-intro a:hover,
+.pp-content a:hover {
+    border-bottom-color: var(--red);
+}
+
+.pp-section {
+    padding-top: 40px;
+    scroll-margin-top: 24px;
+}
+
+.pp-section:first-of-type {
+    padding-top: 32px;
+}
+
+.pp-section h2 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin: 0 0 18px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+}
+
+.pp-content h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 26px 0 10px;
+}
+
+.pp-content h4 {
+    font-size: 12.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin: 22px 0 10px;
+}
+
+.pp-content p {
+    margin: 0 0 14px;
+    font-size: 15px;
+    line-height: 1.7;
+}
+
+.pp-content ul {
+    margin: 0 0 14px;
+    padding-left: 20px;
+}
+
+.pp-content li {
+    margin-bottom: 8px;
+    font-size: 15px;
+    line-height: 1.65;
+}
+
+.pp-content strong {
+    color: var(--ink);
+    font-weight: 600;
+}
+
+/* Definitions grid */
+.pp-glossary {
+    display: grid;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.pp-term {
+    background: #F9FAFB;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+
+.pp-term dt {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 4px;
+}
+
+.pp-term dd {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--muted);
+}
+
+/* Cookie cards */
+.pp-cookie-grid {
+    display: grid;
+    gap: 12px;
+    margin: 14px 0 22px;
+}
+
+.pp-cookie-card {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    background: var(--card);
+}
+
+.pp-cookie-card h5 {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0 0 6px;
+}
+
+.pp-cookie-meta {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--red);
+    background: var(--red-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    margin-bottom: 10px;
+}
+
+.pp-cookie-card p {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--muted);
+}
+
+/* Retention */
+.pp-retention-group {
+    margin-bottom: 18px;
+}
+
+.pp-retention-group h5 {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--red);
+    margin: 0 0 8px;
+}
+
+/* Contact */
+.pp-contact-card {
+    margin-top: 8px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 24px;
+    background: linear-gradient(180deg, #FAFAFA 0%, #FFFFFF 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.pp-contact-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 4px;
+}
+
+.pp-contact-card a.pp-email {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    border-bottom: none;
+}
+
+.pp-contact-card a.pp-contact-btn {
+    font-size: 13.5px;
+    font-weight: 600;
+    background: var(--red);
+    color: #fff;
+    border: none;
+    border-bottom: none;
+    padding: 11px 18px;
+    border-radius: 10px;
+    text-decoration: none;
+    white-space: nowrap;
+    box-shadow: 0 1px 2px rgba(232, 52, 42, 0.25);
+}
+
+.pp-contact-card a.pp-contact-btn:hover {
+    background: #D42B22;
+    border-bottom: none;
+    transition: 0.2s;
+}
+
+.pp-footer {
+    margin-top: 56px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--muted);
+}
