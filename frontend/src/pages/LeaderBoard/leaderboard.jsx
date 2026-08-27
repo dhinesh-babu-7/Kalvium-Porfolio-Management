@@ -12,10 +12,6 @@ const POINTS = {
 
 const STUDENTS_PER_PAGE = 10;
 
-// ============================================================
-// HELPER: CLEAN LEETCODE USERNAME
-// ============================================================
-
 function cleanUsername(username) {
   if (!username) return "";
 
@@ -27,9 +23,11 @@ function cleanUsername(username) {
   return username;
 }
 
-// ============================================================
-// LEADERBOARD COMPONENT
-// ============================================================
+function createAvatarUrl(name) {
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    name || "Student"
+  )}&background=ffdddd&color=d71920&size=256`;
+}
 
 function Leaderboard() {
   const navigate = useNavigate();
@@ -52,15 +50,15 @@ function Leaderboard() {
     let isMounted = true;
 
     const fetchLeaderboard = async () => {
-      setIsLoading(true);
-      setError(null);
-
       try {
+        setIsLoading(true);
+        setError(null);
+
         const leaderboardData = await getLeaderboardData();
 
         const rows = Array.isArray(leaderboardData)
           ? leaderboardData
-          : [];
+          : leaderboardData?.data || [];
 
         const results = rows.map((entry) => {
           const profile = entry?.profiles || {};
@@ -69,50 +67,32 @@ function Leaderboard() {
           const mediumSolved = Number(entry?.medium_solved ?? 0);
           const hardSolved = Number(entry?.hard_solved ?? 0);
 
-          // ============================================================
-          // ANTI-CHEAT / MENTOR REVIEW STATUS
-          // ============================================================
-
           const pendingReviewCount = Number(
             entry?.pending_review_count ?? 0
           );
 
-          const isSuspended = entry?.is_suspended === true;
+          const isSuspended = Boolean(entry?.is_suspended);
 
           const isUnderReview =
+            Boolean(entry?.is_under_review) ||
             isSuspended ||
-            entry?.is_under_review === true ||
             pendingReviewCount > 0;
-
-          // ============================================================
-          // AVATAR
-          // ============================================================
 
           const studentName =
             profile?.name ||
+            entry?.name ||
             entry?.leetcode_username ||
             "Student";
 
           const avatar =
-            profile?.avatar_url &&
-            profile.avatar_url.trim() !== ""
+            profile?.avatar_url?.trim()
               ? profile.avatar_url
-              : `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                  studentName
-                )}&background=ffdddd&color=d71920&size=256`;
-
-          // ============================================================
-          // TOTAL SOLVED
-          // ============================================================
+              : createAvatarUrl(studentName);
 
           const totalSolved =
             entry?.total_solved != null
               ? Number(entry.total_solved)
               : easySolved + mediumSolved + hardSolved;
-
-          // ============================================================
-          // SCORE
-          // ============================================================
 
           const score = Number(entry?.score ?? 0);
 
@@ -124,37 +104,28 @@ function Leaderboard() {
               null,
 
             name: studentName,
-
             username: entry?.leetcode_username || "",
-
             avatar,
 
             easySolved,
             mediumSolved,
             hardSolved,
-
             total: totalSolved,
-
             score,
 
-            ranking: entry?.ranking ?? null,
+            ranking:
+              entry?.ranking != null
+                ? Number(entry.ranking)
+                : null,
 
             pendingReviewCount,
-
             isSuspended,
-
             isUnderReview,
           };
         });
 
-        if (!isMounted) return;
-
-        // ============================================================
-        // SORT
-        // ============================================================
-
         const sorted = results.sort((a, b) => {
-          // Students without review first
+          // Normal students first, flagged/pending placed at the very end
           if (a.isUnderReview !== b.isUnderReview) {
             return a.isUnderReview ? 1 : -1;
           }
@@ -164,12 +135,12 @@ function Leaderboard() {
             return b.score - a.score;
           }
 
-          // If score is same, higher total solved first
+          // Higher total solved first
           if (b.total !== a.total) {
             return b.total - a.total;
           }
 
-          // If still same, use LeetCode ranking
+          // Better LeetCode ranking
           if (
             a.ranking != null &&
             b.ranking != null &&
@@ -181,10 +152,10 @@ function Leaderboard() {
           return 0;
         });
 
-        setRankings(sorted);
-
-        // Reset pagination whenever leaderboard refreshes
-        setCurrentPage(1);
+        if (isMounted) {
+          setRankings(sorted);
+          setCurrentPage(1);
+        }
       } catch (err) {
         console.error("Error fetching leaderboard:", err);
 
@@ -208,7 +179,7 @@ function Leaderboard() {
   }, []);
 
   // ============================================================
-  // CHECK PENDING REVIEW
+  // CHECK CURRENT USER REVIEW STATUS
   // ============================================================
 
   useEffect(() => {
@@ -220,11 +191,12 @@ function Leaderboard() {
 
         if (isMounted) {
           setUserPendingReview({
-            hasPendingReview:
-              status?.hasPendingReview || false,
-
-            pendingReviewCount:
-              Number(status?.pendingReviewCount) || 0,
+            hasPendingReview: Boolean(
+              status?.hasPendingReview
+            ),
+            pendingReviewCount: Number(
+              status?.pendingReviewCount ?? 0
+            ),
           });
         }
       } catch (error) {
@@ -244,19 +216,34 @@ function Leaderboard() {
 
   // ============================================================
   // PODIUM
+  // Only verified students can enter podium
   // ============================================================
 
-  const topThree = rankings.slice(0, 3);
+  const verifiedStudents = rankings.filter(
+    (student) => !student.isUnderReview
+  );
+
+  const flaggedStudents = rankings.filter(
+    (student) => student.isUnderReview
+  );
+
+  const topThree = verifiedStudents.slice(0, 3);
 
   // ============================================================
   // PAGINATION
+  // Move flagged/pending students to the end of the combined list
   // ============================================================
 
-  // Students after top 3
-  const allRemainingStudents = rankings.slice(3);
+  const allRemainingStudents = [
+    ...verifiedStudents.slice(3),
+    ...flaggedStudents,
+  ];
 
-  const totalPages = Math.ceil(
-    allRemainingStudents.length / STUDENTS_PER_PAGE
+  const totalPages = Math.max(
+    1,
+    Math.ceil(
+      allRemainingStudents.length / STUDENTS_PER_PAGE
+    )
   );
 
   const startIndex =
@@ -268,32 +255,18 @@ function Leaderboard() {
   );
 
   // ============================================================
-  // AVATAR
+  // HELPERS
   // ============================================================
 
-  const getAvatar = (student) => {
-    if (student?.avatar) {
-      return student.avatar;
-    }
-
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      student?.name || "Student"
-    )}&background=ffdddd&color=d71920&size=256`;
-  };
-
-  // ============================================================
-  // STUDENT CLICK
-  // ============================================================
+  const getAvatar = (student) =>
+    student?.avatar ||
+    createAvatarUrl(student?.name);
 
   const handleStudentClick = (student) => {
     if (student?.user_id) {
       navigate(`/portfolio/${student.user_id}`);
     }
   };
-
-  // ============================================================
-  // PAGINATION HANDLERS
-  // ============================================================
 
   const goToPreviousPage = () => {
     setCurrentPage((prev) => Math.max(prev - 1, 1));
@@ -305,20 +278,14 @@ function Leaderboard() {
     );
   };
 
-  const goToPage = (page) => {
-    setCurrentPage(page);
-  };
-
   // ============================================================
   // RENDER
   // ============================================================
 
   return (
     <div className="leaderboard-page">
-      {/* ============================================================
-          WORK IN PROGRESS / MAINTENANCE NOTICE
-      ============================================================ */}
-      <div 
+
+      <div
         className="leaderboard-wip-notice"
         style={{
           backgroundColor: "#fff3cd",
@@ -330,18 +297,19 @@ function Leaderboard() {
           display: "flex",
           alignItems: "center",
           gap: "10px",
-          fontWeight: "500"
+          fontWeight: "500",
         }}
       >
-        <span style={{ fontSize: "1.2rem" }}>🚧</span>
+        <span style={{ fontSize: "1.2rem" }}>
+          🚧
+        </span>
+
         <div>
-          <strong>Under Maintenance:</strong> We are currently working on improving this page. Recent updates or profile changes may take up to 24 hours to reflect on the leaderboard.
+          <strong>Under Maintenance:</strong>{" "}
+          We are currently improving this page.
+          Recent updates may take up to 24 hours to reflect.
         </div>
       </div>
-
-      {/* ============================================================
-          PAGE HEADER
-      ============================================================ */}
 
       <div className="leaderboard-title">
         <div className="title-header-row">
@@ -349,13 +317,12 @@ function Leaderboard() {
         </div>
 
         <p>
-          Rapid or suspicious consecutive solves are automatically 
-          flagged by AI and held in the
-          <strong> Mentor Evaluation Queue</strong> before
-          point allocation.
+          Rapid or suspicious consecutive solves may be
+          flagged and sent to the
+          <strong> Mentor Evaluation Queue</strong>.
+          Flagged solves do not affect leaderboard ranking
+          until reviewed.
         </p>
-
-        {/* POINTS LEGEND */}
 
         <div className="points-legend">
           <span className="point-badge easy">
@@ -371,19 +338,17 @@ function Leaderboard() {
           </span>
 
           <span className="point-badge review-info">
-            🕒 Flagged Solves = Held for Review
+            🚩 Flagged Review Pending
           </span>
         </div>
       </div>
 
-      {/* ============================================================
-          PENDING REVIEW NOTICE
-      ============================================================ */}
-
       {userPendingReview.hasPendingReview && (
         <div className="leaderboard-pending-notice">
           <div className="pending-notice-content">
-            <span className="pending-icon">⏳</span>
+            <span className="pending-icon">
+              ⏳
+            </span>
 
             <div>
               <strong>
@@ -393,12 +358,11 @@ function Leaderboard() {
               <p>
                 You have{" "}
                 {userPendingReview.pendingReviewCount}{" "}
-                rapid submission
+                submission
                 {userPendingReview.pendingReviewCount !== 1
                   ? "s"
                   : ""}{" "}
-                awaiting verification. Once approved,
-                you'll appear on the leaderboard.
+                awaiting verification.
               </p>
             </div>
           </div>
@@ -412,19 +376,11 @@ function Leaderboard() {
         </div>
       )}
 
-      {/* ============================================================
-          ERROR
-      ============================================================ */}
-
       {error && (
         <div className="leaderboard-error">
           {error}
         </div>
       )}
-
-      {/* ============================================================
-          LOADING / EMPTY / CONTENT
-      ============================================================ */}
 
       {isLoading ? (
         <div className="leaderboard-loading">
@@ -436,228 +392,40 @@ function Leaderboard() {
         </div>
       ) : (
         <>
-          {/* ========================================================
-              TOP 3 PODIUM
-          ======================================================== */}
-
           {topThree.length > 0 && (
             <div className="podium">
-              {/* ======================================================
-                  SECOND PLACE
-              ====================================================== */}
 
               {topThree[1] && (
-                <div
-                  className="podium-card second-place"
-                  onClick={() =>
-                    handleStudentClick(topThree[1])
-                  }
-                >
-                  <img
-                    src={getAvatar(topThree[1])}
-                    alt={topThree[1].name}
-                    className="podium-avatar"
-                  />
-
-                  <h2>{topThree[1].name}</h2>
-
-                  <p className="podium-username">
-                    @{cleanUsername(topThree[1].username)}
-                  </p>
-
-                  <div className="podium-points-badge">
-                    <strong>
-                      {topThree[1].score}
-                    </strong>{" "}
-                    pts
-                  </div>
-
-                  {topThree[1].pendingReviewCount > 0 && (
-                    <div
-                      className="pending-badge"
-                      title="Pending mentor review"
-                    >
-                      ⏳ {topThree[1].pendingReviewCount}{" "}
-                      in Review
-                    </div>
-                  )}
-
-                  <div className="problem-stats">
-                    <div>
-                      <strong className="easy-text">
-                        {topThree[1].easySolved}
-                      </strong>
-                      <span>Easy</span>
-                    </div>
-
-                    <div>
-                      <strong className="medium-text">
-                        {topThree[1].mediumSolved}
-                      </strong>
-                      <span>Medium</span>
-                    </div>
-
-                    <div>
-                      <strong className="hard-text">
-                        {topThree[1].hardSolved}
-                      </strong>
-                      <span>Hard</span>
-                    </div>
-                  </div>
-
-                  <div className="podium-rank">
-                    2
-                  </div>
-                </div>
+                <PodiumCard
+                  student={topThree[1]}
+                  position={2}
+                  className="second-place"
+                  onClick={handleStudentClick}
+                />
               )}
-
-              {/* ======================================================
-                  FIRST PLACE
-              ====================================================== */}
 
               {topThree[0] && (
-                <div
-                  className="podium-card first-place"
-                  onClick={() =>
-                    handleStudentClick(topThree[0])
-                  }
-                >
-                  <img
-                    src={getAvatar(topThree[0])}
-                    alt={topThree[0].name}
-                    className="podium-avatar"
-                  />
-
-                  <h2>{topThree[0].name}</h2>
-
-                  <p className="podium-username">
-                    @{cleanUsername(topThree[0].username)}
-                  </p>
-
-                  <div className="podium-points-badge highlight">
-                    <strong>
-                      {topThree[0].score}
-                    </strong>{" "}
-                    pts
-                  </div>
-
-                  {topThree[0].pendingReviewCount > 0 && (
-                    <div
-                      className="pending-badge"
-                      title="Pending mentor review"
-                    >
-                      ⏳ {topThree[0].pendingReviewCount}{" "}
-                      in Review
-                    </div>
-                  )}
-
-                  <div className="problem-stats">
-                    <div>
-                      <strong className="easy-text">
-                        {topThree[0].easySolved}
-                      </strong>
-                      <span>Easy</span>
-                    </div>
-
-                    <div>
-                      <strong className="medium-text">
-                        {topThree[0].mediumSolved}
-                      </strong>
-                      <span>Medium</span>
-                    </div>
-
-                    <div>
-                      <strong className="hard-text">
-                        {topThree[0].hardSolved}
-                      </strong>
-                      <span>Hard</span>
-                    </div>
-                  </div>
-
-                  <div className="podium-rank first-rank">
-                    1
-                  </div>
-                </div>
+                <PodiumCard
+                  student={topThree[0]}
+                  position={1}
+                  className="first-place"
+                  onClick={handleStudentClick}
+                />
               )}
 
-              {/* ======================================================
-                  THIRD PLACE
-              ====================================================== */}
-
               {topThree[2] && (
-                <div
-                  className="podium-card third-place"
-                  onClick={() =>
-                    handleStudentClick(topThree[2])
-                  }
-                >
-                  <img
-                    src={getAvatar(topThree[2])}
-                    alt={topThree[2].name}
-                    className="podium-avatar"
-                  />
-
-                  <h2>{topThree[2].name}</h2>
-
-                  <p className="podium-username">
-                    @{cleanUsername(topThree[2].username)}
-                  </p>
-
-                  <div className="podium-points-badge">
-                    <strong>
-                      {topThree[2].score}
-                    </strong>{" "}
-                    pts
-                  </div>
-
-                  {topThree[2].pendingReviewCount > 0 && (
-                    <div
-                      className="pending-badge"
-                      title="Pending mentor review"
-                    >
-                      ⏳ {topThree[2].pendingReviewCount}{" "}
-                      in Review
-                    </div>
-                  )}
-
-                  <div className="problem-stats">
-                    <div>
-                      <strong className="easy-text">
-                        {topThree[2].easySolved}
-                      </strong>
-                      <span>Easy</span>
-                    </div>
-
-                    <div>
-                      <strong className="medium-text">
-                        {topThree[2].mediumSolved}
-                      </strong>
-                      <span>Medium</span>
-                    </div>
-
-                    <div>
-                      <strong className="hard-text">
-                        {topThree[2].hardSolved}
-                      </strong>
-                      <span>Hard</span>
-                    </div>
-                  </div>
-
-                  <div className="podium-rank">
-                    3
-                  </div>
-                </div>
+                <PodiumCard
+                  student={topThree[2]}
+                  position={3}
+                  className="third-place"
+                  onClick={handleStudentClick}
+                />
               )}
             </div>
           )}
 
-          {/* ========================================================
-              TABLE
-          ======================================================== */}
-
           {remainingStudents.length > 0 && (
             <div className="leaderboard-table">
-              {/* TABLE HEADER */}
 
               <div className="table-header">
                 <span>RANK</span>
@@ -669,14 +437,21 @@ function Leaderboard() {
                 <span>POINTS</span>
               </div>
 
-              {/* TABLE ROWS */}
-
               {remainingStudents.map((student, index) => {
-                const rank = startIndex + index + 4;
+                const isFlagged =
+                  student.isUnderReview;
+
+                const rank = isFlagged
+                  ? "—"
+                  : startIndex + index + 4;
 
                 return (
                   <div
-                    className="table-row"
+                    className={`table-row ${
+                      isFlagged
+                        ? "flagged-student-row"
+                        : ""
+                    }`}
                     key={
                       student.user_id ||
                       student.username ||
@@ -687,7 +462,9 @@ function Leaderboard() {
                     }
                   >
                     <div className="table-rank">
-                      #{rank}
+                      {rank === "—"
+                        ? "🚩"
+                        : `#${rank}`}
                     </div>
 
                     <div className="table-student">
@@ -708,14 +485,12 @@ function Leaderboard() {
                         </span>
                       </div>
 
-                      {student.pendingReviewCount > 0 && (
+                      {student.isUnderReview && (
                         <span
                           className="table-pending-pill"
-                          title="Solves under mentor evaluation"
+                          title="Under mentor review"
                         >
-                          ⏳{" "}
-                          {student.pendingReviewCount}{" "}
-                          review
+                          🚩 Flagged Review Pending
                         </span>
                       )}
                     </div>
@@ -745,72 +520,132 @@ function Leaderboard() {
             </div>
           )}
 
-          {/* ========================================================
-              PAGINATION
-          ======================================================== */}
-
           {totalPages > 1 && (
-            <div className="leaderboard-pagination">
-              {/* PREVIOUS */}
+            <>
+              <div className="leaderboard-pagination">
 
-              <button
-                className="pagination-button"
-                disabled={currentPage === 1}
-                onClick={goToPreviousPage}
-              >
-                ← Previous
-              </button>
+                <button
+                  className="pagination-button"
+                  disabled={currentPage === 1}
+                  onClick={goToPreviousPage}
+                >
+                  ← Previous
+                </button>
 
-              {/* PAGE NUMBERS */}
+                <div className="pagination-pages">
+                  {Array.from(
+                    { length: totalPages },
+                    (_, index) => index + 1
+                  ).map((page) => (
+                    <button
+                      key={page}
+                      className={`pagination-number ${
+                        currentPage === page
+                          ? "active"
+                          : ""
+                      }`}
+                      onClick={() =>
+                        setCurrentPage(page)
+                      }
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
 
-              <div className="pagination-pages">
-                {Array.from(
-                  { length: totalPages },
-                  (_, index) => index + 1
-                ).map((page) => (
-                  <button
-                    key={page}
-                    className={`pagination-number ${
-                      currentPage === page
-                        ? "active"
-                        : ""
-                    }`}
-                    onClick={() =>
-                      goToPage(page)
-                    }
-                  >
-                    {page}
-                  </button>
-                ))}
+                <button
+                  className="pagination-button"
+                  disabled={
+                    currentPage === totalPages
+                  }
+                  onClick={goToNextPage}
+                >
+                  Next →
+                </button>
               </div>
 
-              {/* NEXT */}
-
-              <button
-                className="pagination-button"
-                disabled={
-                  currentPage === totalPages
-                }
-                onClick={goToNextPage}
-              >
-                Next →
-              </button>
-            </div>
-          )}
-
-          {/* ========================================================
-              PAGE INFO
-          ======================================================== */}
-
-          {totalPages > 1 && (
-            <div className="pagination-info">
-              Page {currentPage} of {totalPages}
-              {" • "}
-              Showing {remainingStudents.length} students
-            </div>
+              <div className="pagination-info">
+                Page {currentPage} of {totalPages}
+                {" • "}
+                Showing {remainingStudents.length} students
+              </div>
+            </>
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// REUSABLE PODIUM CARD
+// ============================================================
+
+function PodiumCard({
+  student,
+  position,
+  className,
+  onClick,
+}) {
+  const avatar =
+    student.avatar ||
+    createAvatarUrl(student.name);
+
+  return (
+    <div
+      className={`podium-card ${className}`}
+      onClick={() => onClick(student)}
+    >
+      <img
+        src={avatar}
+        alt={student.name}
+        className="podium-avatar"
+      />
+
+      <h2>{student.name}</h2>
+
+      <p className="podium-username">
+        @{cleanUsername(student.username)}
+      </p>
+
+      <div
+        className={`podium-points-badge ${
+          position === 1 ? "highlight" : ""
+        }`}
+      >
+        <strong>{student.score}</strong> pts
+      </div>
+
+      <div className="problem-stats">
+        <div>
+          <strong className="easy-text">
+            {student.easySolved}
+          </strong>
+          <span>Easy</span>
+        </div>
+
+        <div>
+          <strong className="medium-text">
+            {student.mediumSolved}
+          </strong>
+          <span>Medium</span>
+        </div>
+
+        <div>
+          <strong className="hard-text">
+            {student.hardSolved}
+          </strong>
+          <span>Hard</span>
+        </div>
+      </div>
+
+      <div
+        className={`podium-rank ${
+          position === 1 ? "first-rank" : ""
+        }`}
+      >
+        {position}
+      </div>
     </div>
   );
 }
