@@ -4,6 +4,7 @@ import { Home } from "lucide-react";
 
 import Sidebar from "./sidebar";
 import DashboardContent from "./dashboardcontent";
+import Overview from "./Overview";
 import SettingsContent from "./settingsconetnt";
 import Assigned from "./Assigned";
 import MentorReview from "./MentorReview";
@@ -66,6 +67,10 @@ const MentorDashboard = ({ profile, isLoading = false }) => {
 
           {activeNav === "Dashboard" && (
             <DashboardContent />
+          )}
+
+          {activeNav === "Overview" && (
+            <Overview profile={profile} />
           )}
 
           {activeNav === "Assigned" && (

@@ -71,8 +71,9 @@ const DashboardContent = ({ onViewStudents }) => {
     const fetchStudentData = async () => {
       setIsLoading(true);
       try {
-        const studentData = await getStudents();
-        setStudents(studentData || []);
+        const response = await getStudents();
+        // FIX: Extract the students array from the API response object
+        setStudents(response?.students || []);
       } catch (error) {
         console.error("Failed to load student data:", error);
       } finally {

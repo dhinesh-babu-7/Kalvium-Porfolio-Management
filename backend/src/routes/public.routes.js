@@ -6,19 +6,19 @@ const router = express.Router();
 
 // --- Rate Limiters Config ---
 const allprofilesLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 30, 
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many directory requests, please try again in 15 minutes.' }
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many directory requests, please try again in 15 minutes.' }
 });
 
 const singleStudentLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 100, 
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many profile requests, please try again in 15 minutes.' }
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many profile requests, please try again in 15 minutes.' }
 });
 
 const statsRouteLimiter = rateLimit({
@@ -74,7 +74,7 @@ const formatProfileWithActivity = (profile) => {
 
     const effectiveIsActive =
         hasSolvedProblems &&
-        (rawActive === true || rawActive === 1 || rawActive === "true" || rawActive === "1")
+            (rawActive === true || rawActive === 1 || rawActive === "true" || rawActive === "1")
             ? true
             : hasSolvedProblems && lastSolvedAt
                 ? (() => {
@@ -98,103 +98,103 @@ const formatProfileWithActivity = (profile) => {
 // 1. GET all profiles or filter using ?user_id= query
 // ==========================================
 router.get('/profiles', allprofilesLimiter, async (req, res) => {
-  try {
-    const { user_id } = req.query;
+    try {
+        const { user_id } = req.query;
 
-    if (user_id) {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select(`
+        if (user_id) {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select(`
             user_id, name, title, role, avatar_url, github, leetcode, linkedin,
             leetcode_leaderboard ( is_leetcode_active, last_solved_at, total_solved )
         `)
-        .eq('user_id', user_id)
-        .single();
+                .eq('user_id', user_id)
+                .single();
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          return res.status(404).json({ error: 'Student not found' });
+            if (error) {
+                if (error.code === 'PGRST116') {
+                    return res.status(404).json({ error: 'Student not found' });
+                }
+                return res.status(400).json({ error: error.message });
+            }
+
+            return res.json(formatProfileWithActivity(data));
         }
-        return res.status(400).json({ error: error.message });
-      }
 
-      return res.json(formatProfileWithActivity(data));
-    }
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .select(`
-          user_id, name, title, squad_id, avatar_url, github, leetcode, linkedin,
+        const { data, error } = await supabase
+            .from('profiles')
+            .select(`
+          user_id, name, title, squad_id, avatar_url, github, leetcode, linkedin, kalvium_email,
           leetcode_leaderboard ( is_leetcode_active, last_solved_at, total_solved )
       `);
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
+        if (error) {
+            return res.status(400).json({ error: error.message });
+        }
 
-    const formattedData = (data || []).map(formatProfileWithActivity);
-    return res.json(formattedData);
-  } catch (err) {
-    return res.status(500).json({ error: 'Internal Server Error', details: err.message });
-  }
+        const formattedData = (data || []).map(formatProfileWithActivity);
+        return res.json(formattedData);
+    } catch (err) {
+        return res.status(500).json({ error: 'Internal Server Error', details: err.message });
+    }
 });
 
 // ==========================================
 // GET Featured Students
 // ==========================================
 router.get("/profiles/featured", allprofilesLimiter, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("user_id, name, title, avatar_url");
+    try {
+        const { data, error } = await supabase
+            .from("profiles")
+            .select("user_id, name, title, avatar_url");
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
+        if (error) {
+            return res.status(400).json({ error: error.message });
+        }
+
+        const shuffled = [...data];
+
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+
+        res.json(shuffled.slice(0, 4));
+    } catch (err) {
+        res.status(500).json({
+            error: "Internal Server Error",
+            details: err.message,
+        });
     }
-
-    const shuffled = [...data];
-
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-
-    res.json(shuffled.slice(0, 4));
-  } catch (err) {
-    res.status(500).json({
-      error: "Internal Server Error",
-      details: err.message,
-    });
-  }
 });
 
 // ==========================================
 // 2. GET single student profile using REST path parameter /profiles/:user_id
 // ==========================================
 router.get('/profiles/:user_id', singleStudentLimiter, async (req, res) => {
-  try {
-    const { user_id } = req.params;
+    try {
+        const { user_id } = req.params;
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select(`
+        const { data, error } = await supabase
+            .from('profiles')
+            .select(`
         *,
         leetcode_leaderboard ( is_leetcode_active, last_solved_at, total_solved )
-      `) 
-      .eq('user_id', user_id)
-      .single();
+      `)
+            .eq('user_id', user_id)
+            .single();
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Student not found' });
-      }
-      return res.status(400).json({ error: error.message });
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return res.status(404).json({ error: 'Student not found' });
+            }
+            return res.status(400).json({ error: error.message });
+        }
+
+        return res.json(formatProfileWithActivity(data));
+    } catch (err) {
+        return res.status(500).json({ error: 'Internal Server Error', details: err.message });
     }
-
-    return res.json(formatProfileWithActivity(data));
-  } catch (err) {
-    return res.status(500).json({ error: 'Internal Server Error', details: err.message });
-  }
 });
 
 // ==========================================
@@ -210,7 +210,7 @@ router.put("/updateprofile", updateProfileLimiter, async (req, res) => {
         const {
             id,
             auth_id,
-            user_id, 
+            user_id,
             display_id,
             name,
             kalvium_email,
@@ -230,7 +230,7 @@ router.put("/updateprofile", updateProfileLimiter, async (req, res) => {
 
         const cleanPayload = {
             ...restPayload,
-            user_id: user_id, 
+            user_id: user_id,
             squad_id: Number.isNaN(parsedSquad) ? null : parsedSquad,
             personal_email: personalEmail !== undefined ? personalEmail : restPayload.personal_email || null,
             resume_url: resumeUrl !== undefined ? resumeUrl : restPayload.resume_url || null,

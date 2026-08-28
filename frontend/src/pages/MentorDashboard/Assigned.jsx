@@ -199,7 +199,7 @@ export default function Assigned() {
   const [modalSquadFilter, setModalSquadFilter] = useState("all");
   const [modalSearch, setModalSearch] = useState("");
 
-  // Fetch Dashboard Data
+  // Fetch Dashboard Data with array normalization
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
@@ -209,11 +209,37 @@ export default function Assigned() {
         getStudents(),
       ]);
 
-      setMentorSquads(squadsData || []);
-      setAssignedStudents(assignedData || []);
-      setAllStudents(allStudentsData || []);
+      // Normalize array extraction for responses wrapped in objects
+      const squadsList = Array.isArray(squadsData)
+        ? squadsData
+        : Array.isArray(squadsData?.squads)
+        ? squadsData.squads
+        : [];
+
+      const assignedList = Array.isArray(assignedData)
+        ? assignedData
+        : Array.isArray(assignedData?.students)
+        ? assignedData.students
+        : Array.isArray(assignedData?.data)
+        ? assignedData.data
+        : [];
+
+      const allStudentsList = Array.isArray(allStudentsData)
+        ? allStudentsData
+        : Array.isArray(allStudentsData?.students)
+        ? allStudentsData.students
+        : Array.isArray(allStudentsData?.data)
+        ? allStudentsData.data
+        : [];
+
+      setMentorSquads(squadsList);
+      setAssignedStudents(assignedList);
+      setAllStudents(allStudentsList);
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
+      setMentorSquads([]);
+      setAssignedStudents([]);
+      setAllStudents([]);
     } finally {
       setLoading(false);
     }
@@ -336,24 +362,40 @@ export default function Assigned() {
     }
   };
 
+  // Safe Arrays for Memoization Guards
+  const safeAssignedStudents = useMemo(
+    () => (Array.isArray(assignedStudents) ? assignedStudents : []),
+    [assignedStudents]
+  );
+
+  const safeAllStudents = useMemo(
+    () => (Array.isArray(allStudents) ? allStudents : []),
+    [allStudents]
+  );
+
+  const safeMentorSquads = useMemo(
+    () => (Array.isArray(mentorSquads) ? mentorSquads : []),
+    [mentorSquads]
+  );
+
   // Computed Metrics
   const activeCount = useMemo(
-    () => assignedStudents.filter((s) => isStudentActive(s) && !is1DayInactiveStudent(s)).length,
-    [assignedStudents]
+    () => safeAssignedStudents.filter((s) => isStudentActive(s) && !is1DayInactiveStudent(s)).length,
+    [safeAssignedStudents]
   );
 
   const oneDayInactiveCount = useMemo(
-    () => assignedStudents.filter((s) => is1DayInactiveStudent(s)).length,
-    [assignedStudents]
+    () => safeAssignedStudents.filter((s) => is1DayInactiveStudent(s)).length,
+    [safeAssignedStudents]
   );
 
   const inactiveCount = useMemo(
-    () => assignedStudents.filter((s) => !isStudentActive(s)).length,
-    [assignedStudents]
+    () => safeAssignedStudents.filter((s) => !isStudentActive(s)).length,
+    [safeAssignedStudents]
   );
 
   const filteredStudents = useMemo(() => {
-    return assignedStudents.filter((student) => {
+    return safeAssignedStudents.filter((student) => {
       if (
         selectedSquadFilter !== "all" &&
         String(student.squad_id) !== String(selectedSquadFilter)
@@ -372,13 +414,13 @@ export default function Assigned() {
         const query = searchQuery.toLowerCase();
         const nameMatch = student.name?.toLowerCase().includes(query);
         const emailMatch = student.email?.toLowerCase().includes(query);
-        const squadMatch = String(student.squad_id).includes(query);
+        const squadMatch = String(student.squad_id ?? "").includes(query);
         return nameMatch || emailMatch || squadMatch;
       }
 
       return true;
     });
-  }, [assignedStudents, selectedSquadFilter, filterStatus, searchQuery]);
+  }, [safeAssignedStudents, selectedSquadFilter, filterStatus, searchQuery]);
 
   const totalPages = Math.ceil(filteredStudents.length / itemsPerPage) || 1;
   const paginatedStudents = useMemo(() => {
@@ -387,12 +429,12 @@ export default function Assigned() {
   }, [filteredStudents, currentPage]);
 
   const assignedUserIds = useMemo(
-    () => new Set(assignedStudents.map((s) => s.student_user_id || s.user_id || s.id)),
-    [assignedStudents]
+    () => new Set(safeAssignedStudents.map((s) => s.student_user_id || s.user_id || s.id)),
+    [safeAssignedStudents]
   );
 
   const unassignedStudents = useMemo(() => {
-    return allStudents.filter((student) => {
+    return safeAllStudents.filter((student) => {
       const studentId = student.user_id || student.id;
       if (assignedUserIds.has(studentId)) return false;
 
@@ -412,7 +454,7 @@ export default function Assigned() {
 
       return true;
     });
-  }, [allStudents, assignedUserIds, modalSquadFilter, modalSearch]);
+  }, [safeAllStudents, assignedUserIds, modalSquadFilter, modalSearch]);
 
   // Robustly extract or generate recent submissions array
   const recentSubmissions = useMemo(() => {
@@ -559,7 +601,7 @@ export default function Assigned() {
           </div>
           <div className="metric-data">
             <span className="metric-label">Total Assigned</span>
-            <span className="metric-value">{assignedStudents.length}</span>
+            <span className="metric-value">{safeAssignedStudents.length}</span>
           </div>
         </div>
 
@@ -584,7 +626,7 @@ export default function Assigned() {
             <Clock size={22} />
           </div>
           <div className="metric-data">
-            <span className="metric-label">1-Day Inactive</span>
+            <span className="metric-label">1-6 Day Inactive</span>
             <span className="metric-value">{oneDayInactiveCount}</span>
             <span className="metric-hint">&gt; 24h Idle</span>
           </div>
@@ -639,7 +681,7 @@ export default function Assigned() {
                 onChange={(e) => setSelectedSquadFilter(e.target.value)}
               >
                 <option value="all">All Mentor Squads</option>
-                {mentorSquads.map((squadId) => (
+                {safeMentorSquads.map((squadId) => (
                   <option key={squadId} value={squadId}>
                     Squad {squadId}
                   </option>
@@ -896,7 +938,7 @@ export default function Assigned() {
                   onChange={(e) => setModalSquadFilter(e.target.value)}
                 >
                   <option value="all">Filter by Squad...</option>
-                  {mentorSquads.map((squadId) => (
+                  {safeMentorSquads.map((squadId) => (
                     <option key={squadId} value={squadId}>
                       Squad {squadId}
                     </option>
