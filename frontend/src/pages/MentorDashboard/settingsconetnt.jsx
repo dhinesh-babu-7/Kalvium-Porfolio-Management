@@ -38,16 +38,24 @@ export default function SettingsContent({ profile }) {
     setToastMessage(msg);
   };
 
-  // Fetch squad preferences on load
+  // Fetch squad preferences on load with robust array extraction
   useEffect(() => {
     async function fetchSquads() {
       try {
         setLoading(true);
-        const fetchedSquads = await getSquads();
-        setSquads(fetchedSquads || []);
+        const response = await getSquads();
+        
+        // Safely extract array regardless of API payload format
+        const rawSquads = Array.isArray(response)
+          ? response
+          : response?.squads || response?.data || [];
+
+        // Normalize all squad items to String for uniform comparison
+        setSquads(rawSquads.map(String));
       } catch (error) {
         console.error("Failed to load squads:", error);
         showToast("Failed to load squad preferences.", "error");
+        setSquads([]);
       } finally {
         setLoading(false);
       }
@@ -58,8 +66,10 @@ export default function SettingsContent({ profile }) {
 
   const handleAddSquad = () => {
     const trimmed = inputVal.trim();
-    if (trimmed && !squads.includes(trimmed)) {
-      setSquads([...squads, trimmed]);
+    const safeSquads = Array.isArray(squads) ? squads : [];
+
+    if (trimmed && !safeSquads.includes(trimmed)) {
+      setSquads([...safeSquads, trimmed]);
       setInputVal("");
     }
   };
@@ -72,7 +82,8 @@ export default function SettingsContent({ profile }) {
   };
 
   const handleRemoveSquad = (squadToRemove) => {
-    setSquads(squads.filter((s) => s !== squadToRemove));
+    const safeSquads = Array.isArray(squads) ? squads : [];
+    setSquads(safeSquads.filter((s) => String(s) !== String(squadToRemove)));
   };
 
   const handleSubmit = async (e) => {
@@ -89,6 +100,8 @@ export default function SettingsContent({ profile }) {
       setSaving(false);
     }
   };
+
+  const safeSquadsList = Array.isArray(squads) ? squads : [];
 
   return (
     <div className="settings-container">
@@ -147,9 +160,9 @@ export default function SettingsContent({ profile }) {
                 </button>
               </div>
 
-              {squads.length > 0 ? (
+              {safeSquadsList.length > 0 ? (
                 <div className="squad-tags-container">
-                  {squads.map((squad) => (
+                  {safeSquadsList.map((squad) => (
                     <span key={squad} className="squad-chip">
                       Squad {squad}
                       <button

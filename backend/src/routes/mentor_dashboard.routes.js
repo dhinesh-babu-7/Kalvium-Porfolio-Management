@@ -131,8 +131,46 @@ const createLeaderboardMap = (leaderboardRows = []) => {
 };
 
 // ==========================================
-// SQUAD MANAGEMENT ROUTES (mentor_squads)
+// SQUAD MANAGEMENT ROUTES (mentor_squads & profiles)
 // ==========================================
+
+// NEW: GET ALL DISTINCT SQUADS FROM PROFILES TABLE FOR OVERVIEW
+router.get("/getsquadsOverview", requireAuth, async (req, res) => {
+  try {
+    const db = req.authedSupabase;
+
+    const { data, error } = await db
+      .from("profiles")
+      .select("squad_id")
+      .not("squad_id", "is", null);
+
+    if (error) {
+      console.error("Fetch Squads Overview Error:", error);
+      return res.status(400).json({ error: error.message });
+    }
+
+    // Extract distinct non-null squad IDs and sort them
+    const uniqueSquads = [...new Set(
+      (data || [])
+        .map((item) => item.squad_id)
+        .filter((id) => id !== null && id !== undefined && String(id).trim() !== "")
+    )].sort((a, b) => {
+      const numA = Number(a);
+      const numB = Number(b);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return String(a).localeCompare(String(b));
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: uniqueSquads.length,
+      squads: uniqueSquads,
+    });
+  } catch (error) {
+    console.error("Server Error in getsquadsOverview:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 router.get("/getsquads", requireAuth, async (req, res) => {
   try {
@@ -153,6 +191,7 @@ router.get("/getsquads", requireAuth, async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      count: squads.length,
       squads,
     });
   } catch (error) {
@@ -314,7 +353,7 @@ router.get("/assigned-students", requireAuth, async (req, res) => {
     }
 
     if (!assignments || assignments.length === 0) {
-      return res.status(200).json({ success: true, students: [] });
+      return res.status(200).json({ success: true, count: 0, students: [] });
     }
 
     // Step 2: Extract User IDs and fetch profiles
@@ -342,7 +381,7 @@ router.get("/assigned-students", requireAuth, async (req, res) => {
     const assignedStudents = assignments.map((assignment) => {
       const profile =
         profiles?.find(
-          (p) => String(p.user_id) === String(assignment.student_user_id),
+          (p) => String(p.user_id) === String(assignment.student_user_id)
         ) || {};
       const stats =
         leaderboardMap.get(String(assignment.student_user_id)) ||
@@ -362,6 +401,7 @@ router.get("/assigned-students", requireAuth, async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      count: assignedStudents.length,
       students: assignedStudents,
     });
   } catch (error) {
@@ -471,10 +511,6 @@ router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
     const mentorUserId = req.user.id;
     const db = req.authedSupabase;
 
-    // ==========================================
-    // 1. GET STUDENTS ASSIGNED TO THIS MENTOR
-    // ==========================================
-
     const { data: assignments, error: assignmentError } = await db
       .from("squad_students")
       .select("student_user_id, squad_id, assigned_at")
@@ -491,6 +527,7 @@ router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
     if (!assignments || assignments.length === 0) {
       return res.status(200).json({
         success: true,
+        count: 0,
         reviews: [],
       });
     }
@@ -499,17 +536,13 @@ router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
       .map((item) => item.student_user_id)
       .filter(Boolean);
 
-    // ==========================================
-    // 2. GET PENDING LEETCODE SUBMISSIONS
-    // ==========================================
-
     const { data: pendingSubmissions, error: submissionError } = await db
       .from("leetcode_submissions")
       .select(
         `
                 id,
                 user_id,
-                leetcode,
+                leetcode_username,
                 submission_id,
                 title_slug,
                 difficulty,
@@ -517,7 +550,7 @@ router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
                 flag_reason,
                 review_status,
                 status
-            `,
+            `
       )
       .eq("review_status", "pending")
       .in("user_id", studentIds)
@@ -533,17 +566,13 @@ router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
       });
     }
 
-    // No pending submissions
     if (!pendingSubmissions || pendingSubmissions.length === 0) {
       return res.status(200).json({
         success: true,
+        count: 0,
         reviews: [],
       });
     }
-
-    // ==========================================
-    // 3. GET STUDENT PROFILES
-    // ==========================================
 
     const { data: profiles, error: profileError } = await db
       .from("profiles")
@@ -554,7 +583,7 @@ router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
                 avatar_url,
                 squad_id,
                 leetcode
-            `,
+            `
       )
       .in("user_id", studentIds);
 
@@ -566,25 +595,20 @@ router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
       });
     }
 
-    // ==========================================
-    // 4. GET LEETCODE LEADERBOARD DATA
-    // ==========================================
-
     const { data: leaderboardData, error: leaderboardError } = await db
       .from("leetcode_leaderboard")
       .select(
         `
     id,
     user_id,
+    profile_id,
     leetcode_username,
-    submission_id,
-    title_slug,
-    difficulty,
-    submitted_at,
-    flag_reason,
-    review_status,
-    status
-`,
+    easy_solved,
+    medium_solved,
+    hard_solved,
+    total_solved,
+    score
+`
       )
       .in("user_id", studentIds);
 
@@ -595,10 +619,6 @@ router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
         error: leaderboardError.message,
       });
     }
-
-    // ==========================================
-    // 5. BUILD LOOKUP MAPS
-    // ==========================================
 
     const profileMap = new Map();
 
@@ -612,63 +632,43 @@ router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
       leaderboardMap.set(String(row.user_id), row);
     });
 
-    // ==========================================
-    // 6. BUILD MENTOR REVIEW CARDS
-    // ==========================================
-
     const reviews = [];
 
     for (const studentId of studentIds) {
       const studentPendingSubmissions = pendingSubmissions.filter(
-        (submission) => String(submission.user_id) === String(studentId),
+        (submission) => String(submission.user_id) === String(studentId)
       );
 
-      // Student has no pending submissions
       if (studentPendingSubmissions.length === 0) {
         continue;
       }
 
       const profile = profileMap.get(String(studentId)) || {};
-
       const leaderboard = leaderboardMap.get(String(studentId)) || {};
 
       reviews.push({
         student_user_id: studentId,
-
         name: profile.name || "Unknown Student",
-
         avatar_url: profile.avatar_url || null,
-
         squad_id: profile.squad_id || null,
-
         leetcode_username:
           leaderboard.leetcode_username ||
           studentPendingSubmissions[0]?.leetcode_username ||
           profile.leetcode ||
           "unknown",
-
         easy_solved: leaderboard.easy_solved || 0,
-
         medium_solved: leaderboard.medium_solved || 0,
-
         hard_solved: leaderboard.hard_solved || 0,
-
         total_solved: leaderboard.total_solved || 0,
-
         score: leaderboard.score || 0,
-
         pending_review_count: studentPendingSubmissions.length,
-
         pending_submissions: studentPendingSubmissions,
       });
     }
 
-    // ==========================================
-    // 7. RETURN REVIEW QUEUE
-    // ==========================================
-
     return res.status(200).json({
       success: true,
+      count: reviews.length,
       reviews,
     });
   } catch (error) {
@@ -692,7 +692,6 @@ router.patch(
       const { studentUserId } = req.params;
       const db = req.authedSupabase;
 
-      // Make sure this student actually has pending reviews
       const { data: pending, error: pendingError } = await db
         .from("leetcode_submissions")
         .select("id")
@@ -711,7 +710,6 @@ router.patch(
         });
       }
 
-      // Approve all pending submissions
       const { data, error } = await db
         .from("leetcode_submissions")
         .update({
@@ -731,40 +729,29 @@ router.patch(
         });
       }
 
-      // Get the student profile to update leaderboard suspension status
-      const { data: profile, error: profileError } = await db
-        .from("profiles")
+      const { data: stillPending } = await db
+        .from("leetcode_submissions")
         .select("id")
         .eq("user_id", studentUserId)
-        .single();
+        .eq("review_status", "pending")
+        .limit(1);
 
-      if (!profileError && profile) {
-        // Check if there are still any pending submissions
-        const { data: stillPending } = await db
-          .from("leetcode_submissions")
-          .select("id")
-          .eq("user_id", studentUserId)
-          .eq("review_status", "pending")
-          .limit(1);
+      const hasPendingReviews = stillPending && stillPending.length > 0;
 
-        const hasPendingReviews = stillPending && stillPending.length > 0;
+      await db
+        .from("leetcode_leaderboard")
+        .update({
+          is_suspended: hasPendingReviews,
+          suspension_reason: hasPendingReviews
+            ? "Pending mentor review for suspicious submission patterns"
+            : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", studentUserId);
 
-        // Update leaderboard suspension status
-        await db
-          .from("leetcode_leaderboard")
-          .update({
-            is_suspended: hasPendingReviews,
-            suspension_reason: hasPendingReviews
-              ? "Pending mentor review for suspicious submission patterns"
-              : null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("profile_id", profile.id);
-
-        console.log(
-          `[APPROVAL] User ${studentUserId} | Suspension lifted - ready for leaderboard`,
-        );
-      }
+      console.log(
+        `[APPROVAL] User ${studentUserId} | Suspension lifted - ready for leaderboard`
+      );
 
       return res.status(200).json({
         success: true,
@@ -778,7 +765,7 @@ router.patch(
         error: "Internal server error",
       });
     }
-  },
+  }
 );
 
 // ==========================================
@@ -793,7 +780,6 @@ router.patch(
       const { studentUserId } = req.params;
       const db = req.authedSupabase;
 
-      // Find pending submissions
       const { data: pending, error: pendingError } = await db
         .from("leetcode_submissions")
         .select("id")
@@ -812,7 +798,6 @@ router.patch(
         });
       }
 
-      // Reject suspicious submissions
       const { data, error } = await db
         .from("leetcode_submissions")
         .update({
@@ -831,28 +816,19 @@ router.patch(
         });
       }
 
-      // Keep student suspended as they were caught cheating
-      const { data: profile, error: profileError } = await db
-        .from("profiles")
-        .select("id")
-        .eq("user_id", studentUserId)
-        .single();
+      await db
+        .from("leetcode_leaderboard")
+        .update({
+          is_suspended: true,
+          suspension_reason:
+            "Rejected for suspicious submission patterns - Academic integrity violation",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", studentUserId);
 
-      if (!profileError && profile) {
-        await db
-          .from("leetcode_leaderboard")
-          .update({
-            is_suspended: true,
-            suspension_reason:
-              "Rejected for suspicious submission patterns - Academic integrity violation",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("profile_id", profile.id);
-
-        console.log(
-          `[REJECTION] User ${studentUserId} | Permanently suspended for academic integrity violation`,
-        );
-      }
+      console.log(
+        `[REJECTION] User ${studentUserId} | Permanently suspended for academic integrity violation`
+      );
 
       return res.status(200).json({
         success: true,
@@ -867,7 +843,7 @@ router.patch(
         error: "Internal server error",
       });
     }
-  },
+  }
 );
 
 export default router;

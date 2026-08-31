@@ -167,11 +167,11 @@ export default function IndividualStudentPortfolio() {
           <div className="leetcode-stats-main">
             <div className="stat-box">
               <span className="stat-label">Rank</span>
-              <span className="stat-value">{renderStat(student.leetcode_rank, "N/A")}</span>
+              <span className="stat-value-ind-student">{renderStat(student.leetcode_rank, "N/A")}</span>
             </div>
             <div className="stat-box">
               <span className="stat-label">Solved</span>
-              <span className="stat-value">{renderStat(student.leetcode_solved)}</span>
+              <span className="stat-value-ind-student">{renderStat(student.leetcode_solved)}</span>
             </div>
           </div>
 
@@ -204,11 +204,11 @@ export default function IndividualStudentPortfolio() {
           <div className="github-stats-main">
             <div className="stat-box">
               <span className="stat-label">Repos</span>
-              <span className="stat-value">{renderStat(student.github_repos)}</span>
+              <span className="stat-value-ind-student">{renderStat(student.github_repos)}</span>
             </div>
             <div className="stat-box">
               <span className="stat-label">Followers</span>
-              <span className="stat-value">{renderStat(student.github_followers)}</span>
+              <span className="stat-value-ind-student">{renderStat(student.github_followers)}</span>
             </div>
           </div>
         </div>

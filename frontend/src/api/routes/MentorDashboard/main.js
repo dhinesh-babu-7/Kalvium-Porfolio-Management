@@ -5,11 +5,35 @@ import jwt from "../../Helpers/jwt";
 // SQUAD MANAGEMENT
 // ==========================================
 
+export async function getsquadsOverview() {
+  const token = await jwt();
+  if (!token) {
+    console.error("No active session found");
+    return { squads: [], count: 0 };
+  }
+
+  try {
+    const response = await apiClient.get("/mentor/dashboard/getsquadsOverview", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    return {
+      squads: response.data.squads || [],
+      count: response.data.count || 0,
+    };
+  } catch (error) {
+    console.error("Error fetching squads overview:", error);
+    throw error;
+  }
+}
+
 export async function getSquads() {
   const token = await jwt();
   if (!token) {
     console.error("No active session found");
-    return [];
+    return { squads: [], count: 0 };
   }
 
   try {
@@ -19,7 +43,10 @@ export async function getSquads() {
       },
     });
 
-    return response.data.squads || [];
+    return {
+      squads: response.data.squads || [],
+      count: response.data.count || 0,
+    };
   } catch (error) {
     console.error("Error fetching squads:", error);
     throw error;
@@ -52,11 +79,15 @@ export async function saveSquad(squads) {
   }
 }
 
+// ==========================================
+// STUDENT MANAGEMENT & STATS
+// ==========================================
+
 export async function getStudents(squadId = null) {
   const token = await jwt();
   if (!token) {
     console.error("No active session found");
-    return [];
+    return { students: [], count: 0 };
   }
 
   try {
@@ -67,22 +98,21 @@ export async function getStudents(squadId = null) {
       params: squadId ? { squad_id: squadId } : {},
     });
 
-    return response.data.students || [];
+    return {
+      students: response.data.students || [],
+      count: response.data.count || 0,
+    };
   } catch (error) {
     console.error("Error fetching students:", error);
     throw error;
   }
 }
 
-// ==========================================
-// INDIVIDUAL STUDENT MANAGEMENT
-// ==========================================
-
 export async function getAssignedStudents() {
   const token = await jwt();
   if (!token) {
     console.error("No active session found");
-    return [];
+    return { students: [], count: 0 };
   }
 
   try {
@@ -92,9 +122,40 @@ export async function getAssignedStudents() {
       },
     });
 
-    return response.data.students || [];
+    return {
+      students: response.data.students || [],
+      count: response.data.count || 0,
+    };
   } catch (error) {
     console.error("Error fetching assigned students:", error);
+    throw error;
+  }
+}
+
+/**
+ * Fetches detailed stats/activity breakdown for a specific student.
+ * @param {string|number} studentUserId
+ */
+export async function getStudentStats(studentUserId) {
+  const token = await jwt();
+  if (!token) {
+    console.error("No active session found");
+    return null;
+  }
+
+  try {
+    const response = await apiClient.get(
+      `/mentor/dashboard/student-stats/${studentUserId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    return response.data.student || null;
+  } catch (error) {
+    console.error(`Error fetching stats for student ${studentUserId}:`, error);
     throw error;
   }
 }
@@ -152,11 +213,11 @@ export async function unassignStudent(studentUserId) {
 }
 
 // ==========================================
-// BULK & EXTENDED ACTIONS (ADDED)
+// BULK ACTIONS
 // ==========================================
 
 /**
- * Assigns an array of students to a roster/squad in parallel execution.
+ * Assigns an array of students to a squad in parallel execution.
  * @param {Array<{student_user_id: string|number, squad_id: string|number}>} studentList
  */
 export async function assignBulkStudents(studentList) {
@@ -185,138 +246,6 @@ export async function unassignBulkStudents(studentUserIds) {
     return await Promise.all(unassignPromises);
   } catch (error) {
     console.error("Error in bulk unassigning students:", error);
-    throw error;
-  }
-}
-
-/**
- * Fetches detailed stats/activity breakdown for a specific student.
- * @param {string|number} studentUserId
- */
-export async function getStudentStats(studentUserId) {
-  const token = await jwt();
-  if (!token) {
-    console.error("No active session found");
-    return null;
-  }
-
-  try {
-    const response = await apiClient.get(
-      `/mentor/dashboard/student-stats/${studentUserId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    return response.data;
-  } catch (error) {
-    console.error(`Error fetching stats for student ${studentUserId}:`, error);
-    throw error;
-  }
-}
-
-// ==========================================
-// LEETCODE MENTOR REVIEW
-// ==========================================
-
-/**
- * Get all students/submissions waiting for mentor review.
- */
-export async function getLeetCodeReviewQueue() {
-  const token = await jwt();
-
-  if (!token) {
-    console.error("No active session found");
-    return [];
-  }
-
-  try {
-    const response = await apiClient.get(
-      "/mentor/dashboard/leetcode-review-queue",
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    return response.data.reviews || [];
-  } catch (error) {
-    console.error("Error fetching LeetCode review queue:", error);
-    throw error;
-  }
-}
-
-
-/**
- * Approve a student's suspicious submission.
- */
-export async function approveLeetCodeSubmission(submissionId) {
-  const token = await jwt();
-
-  if (!token) {
-    console.error("No active session found");
-    return null;
-  }
-
-  try {
-    const response = await apiClient.patch(
-      `/mentor/dashboard/leetcode-review/${submissionId}/approve`,
-      {},
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    return response.data;
-  } catch (error) {
-    console.error(
-      `Error approving submission ${submissionId}:`,
-      error
-    );
-    throw error;
-  }
-}
-
-
-/**
- * Reject a student's suspicious submission.
- */
-export async function rejectLeetCodeSubmission(
-  submissionId,
-  reason = null
-) {
-  const token = await jwt();
-
-  if (!token) {
-    console.error("No active session found");
-    return null;
-  }
-
-  try {
-    const response = await apiClient.patch(
-      `/mentor/dashboard/leetcode-review/${submissionId}/reject`,
-      {
-        reason,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    return response.data;
-  } catch (error) {
-    console.error(
-      `Error rejecting submission ${submissionId}:`,
-      error
-    );
     throw error;
   }
 }
