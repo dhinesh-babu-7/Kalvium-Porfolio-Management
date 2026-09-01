@@ -13,6 +13,7 @@ import ErrorPage from "./pages/ErrorPage/404page";
 import AuthGate from "./components/AuthGate";
 import MentorDashboard from "./pages/MentorDashboard/mentordashboard.jsx";
 import { getPendingReviewStatus } from "./api/routes/StudentDashboard/dashboard.js";
+import Policypage from "./pages/policy-page/policypage.jsx"
 
 function LegacyStudentRedirect() {
   const { user_id } = useParams();
@@ -130,6 +131,7 @@ function App() {
         <Route path="/student/:user_id" element={<LegacyStudentRedirect />} />
         <Route path="/portfolio/:user_id" element={<IndividualStudentPortfolio />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
+        <Route path="/policy" element={<Policypage />} />
 
         {/* Protected Dashboard Route using AuthGate */}
         <Route

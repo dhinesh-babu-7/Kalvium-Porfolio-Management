@@ -91,9 +91,9 @@ function Footer() {
                 <div className="footer-section">
                     <h3>Legal</h3>
 
-                    <a href="#privacy">
+                    <NavLink  to="/policy">
                         Privacy
-                    </a>
+                    </NavLink>
 
                     <a href="#terms">
                         Terms
