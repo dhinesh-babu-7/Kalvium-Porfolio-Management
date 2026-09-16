@@ -31,9 +31,12 @@ import {
 import { supabase } from "../../lib/supabase.js";
 import kalviumLogo from "../../assets/kalvium-logo.svg";
 import "./EditProfile.css";
+import "./achievements.css";
 
 import DashboardTab from "./DashboardTab.jsx";
 import { getProfile, updateProfile } from "../../api/routes/StudentDashboard/profile.js";
+import Projects from "./Projects.jsx";
+import AchievementsTab from "./AchievementsTab.jsx";
 
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard },
@@ -501,11 +504,9 @@ export default function ProfileTab({
                   ? "Dashboard Overview"
                   : activeNav === "Profile"
                     ? "Student Profile"
-                    : activeNav === "Projects"
-                      ? "Projects & Portfolio"
-                      : activeNav === "Achievements"
-                        ? "Achievements & Badges"
-                        : "Account Settings"}
+                    : activeNav === "Settings" 
+                      ? "Account Settings"
+                    : null}
               </h1>
             </div>
           </div>
@@ -768,7 +769,7 @@ export default function ProfileTab({
 
             {activeNav === "Projects" && (
               <div className="pm-tab-full">
-                <ProjectsTab />
+                <Projects></Projects>
               </div>
             )}
 
@@ -872,26 +873,6 @@ function ProjectsTab() {
       </div>
       <p className="pm-placeholder-description">
         We are building a dynamic showcase section where you will be able to feature your web apps, GitHub repositories, and live project demos.
-      </p>
-      <div className="pm-placeholder-footer">
-        <Sparkles size={14} /> Feature update planned for upcoming release
-      </div>
-    </div>
-  );
-}
-
-function AchievementsTab() {
-  return (
-    <div className="pm-placeholder-card">
-      <div className="pm-placeholder-icon-wrap icon-amber">
-        <Trophy size={28} />
-      </div>
-      <div className="pm-placeholder-title-row">
-        <h2>Achievements & Certifications</h2>
-        <ComingSoonBadge />
-      </div>
-      <p className="pm-placeholder-description">
-        Highlighting your hackathon achievements, verified certificates, and skill badges is coming soon to your student profile!
       </p>
       <div className="pm-placeholder-footer">
         <Sparkles size={14} /> Feature update planned for upcoming release

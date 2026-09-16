@@ -846,4 +846,648 @@ router.patch(
   }
 );
 
+// ==========================================
+// LEETCODE SESSION ROUTES
+// ==========================================
+
+// Session live-refresh limiter - one real-time snapshot per 30 seconds per mentor.
+// requireAuth is mounted before this so req.user is always present, which lets us
+// key on the mentor id. Note: referencing req.ip here would make express-rate-limit
+// v8 throw ERR_ERL_KEY_GEN_IPV6 at import time, so the key is mentor-only.
+const sessionRateLimiter = rateLimit({
+  windowMs: 30 * 1000,
+  max: 2,
+  keyGenerator: (req) => String(req.user?.id || "anonymous"),
+  message: { error: "Please wait 30 seconds before requesting another update" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ==========================================
+// REAL-TIME LEETCODE ACTIVITY HELPERS
+// ==========================================
+//
+// The leetcode_leaderboard table is refreshed by the daily cron, so it can be
+// up to 24h stale. During a live mentor session we query LeetCode directly and
+// diff the snapshot against the baseline captured when the session started.
+
+const LEETCODE_LIVE_GRAPHQL_URL = "https://leetcode.com/graphql";
+const LIVE_STATS_CACHE_TTL_MS = 25 * 1000;
+const LEETCODE_FETCH_TIMEOUT_MS = 8000;
+
+// handle -> { data, fetchedAt }: stops LeetCode being hammered when several
+// mentors poll inside the same 30 second window
+const liveStatsCache = new Map();
+
+// sessionId -> { startedAt, users: { [userId]: { totalSolved, submissionIds } } }
+// Baseline captured at session start; only meaningful while the session lives,
+// so it is kept in memory rather than in the database.
+const sessionBaselines = new Map();
+
+// Accepts either a bare handle or a full profile URL
+const extractLeetcodeHandle = (value) => {
+  if (!value) return null;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (raw.includes("leetcode.com")) {
+    const parts = raw.split("/").filter(Boolean);
+    const candidate = parts[parts.length - 1];
+    if (!candidate || candidate === "u") return null;
+    return candidate;
+  }
+
+  return raw;
+};
+
+const LIVE_STATS_QUERY_FULL = `
+  query getLiveUserStats($username: String!) {
+    matchedUser(username: $username) {
+      username
+      submitStatsGlobal {
+        acSubmissionNum {
+          difficulty
+          count
+        }
+      }
+    }
+    recentAcSubmissionList(username: $username, limit: 20) {
+      id
+      title
+      titleSlug
+      timestamp
+    }
+  }
+`;
+
+const LIVE_STATS_QUERY_FAST = `
+  query getLiveUserStatsFast($username: String!) {
+    matchedUser(username: $username) {
+      username
+      submitStatsGlobal {
+        acSubmissionNum {
+          difficulty
+          count
+        }
+      }
+    }
+  }
+`;
+
+// Pulls stats straight from LeetCode so a session sees live data instead of the
+// once-a-day values stored in leetcode_leaderboard. Two shapes are supported:
+// "full" (stats + recent submissions, used on manual refresh / updates) and
+// "fast" (stats only, used when starting a session so it returns quickly).
+async function fetchLiveLeetcodeStats(username, mode = "full") {
+  const handle = extractLeetcodeHandle(username);
+  if (!handle) return null;
+
+  const cached = liveStatsCache.get(handle);
+  if (cached && Date.now() - cached.fetchedAt < LIVE_STATS_CACHE_TTL_MS) {
+    // A cached FULL snapshot satisfies both modes. A cached FAST snapshot is
+    // only good enough for another fast request - never serve it as full or
+    // the session would lose its recent-submissions baseline.
+    if (mode === "fast" || cached.full) {
+      return cached.data;
+    }
+  }
+
+  if (typeof fetch !== "function") {
+    console.warn("[LIVE LEETCODE] global fetch unavailable - Node 18+ required");
+    return cached?.data || null;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), LEETCODE_FETCH_TIMEOUT_MS);
+
+  try {
+    const isFast = mode === "fast";
+
+    const response = await fetch(LEETCODE_LIVE_GRAPHQL_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Referer: "https://leetcode.com",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+      body: JSON.stringify({
+        query: isFast ? LIVE_STATS_QUERY_FAST : LIVE_STATS_QUERY_FULL,
+        variables: { username: handle },
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[LIVE LEETCODE] ${handle} responded with HTTP ${response.status}`);
+      return cached?.data || null;
+    }
+
+    const result = await response.json();
+    const matchedUser = result?.data?.matchedUser;
+
+    if (!matchedUser) {
+      console.warn(`[LIVE LEETCODE] ${handle} was not found`);
+      return cached?.data || null;
+    }
+
+    const submitStats = matchedUser.submitStatsGlobal?.acSubmissionNum || [];
+
+    // Fast mode fetches stats only; keep any previously-cached recent
+    // submissions so the session baseline still has ids to diff against.
+    const previousSubs = cached?.data?.recentSubmissions || [];
+
+    const data = {
+      username: matchedUser.username,
+      totalSolved: submitStats.find((item) => item.difficulty === "All")?.count || 0,
+      easySolved: submitStats.find((item) => item.difficulty === "Easy")?.count || 0,
+      mediumSolved: submitStats.find((item) => item.difficulty === "Medium")?.count || 0,
+      hardSolved: submitStats.find((item) => item.difficulty === "Hard")?.count || 0,
+      recentSubmissions: isFast
+        ? previousSubs
+        : (result?.data?.recentAcSubmissionList || []).map((sub) => ({
+          id: String(sub.id),
+          title: sub.title,
+          titleSlug: sub.titleSlug,
+          timestamp: Number(sub.timestamp) || 0,
+        })),
+    };
+
+    liveStatsCache.set(handle, { data, fetchedAt: Date.now(), full: !isFast });
+    return data;
+  } catch (err) {
+    console.warn(`[LIVE LEETCODE] Failed for ${handle}:`, err?.message || err);
+    return cached?.data || null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Students assigned to the given squads, with their LeetCode handle resolved
+async function getSessionStudents(db, squadIds = []) {
+  if (!Array.isArray(squadIds) || squadIds.length === 0) return [];
+
+  const { data: squadStudents, error: squadError } = await db
+    .from("squad_students")
+    .select("student_user_id")
+    .in("squad_id", squadIds);
+
+  if (squadError) throw squadError;
+  if (!squadStudents || squadStudents.length === 0) return [];
+
+  const studentIds = [...new Set(squadStudents.map((row) => row.student_user_id))];
+
+  const [profileRes, leaderboardRes] = await Promise.all([
+    db.from("profiles").select("*").in("user_id", studentIds),
+    db.from("leetcode_leaderboard").select("*").in("user_id", studentIds),
+  ]);
+
+  const leaderboardMap = {};
+  (leaderboardRes.data || []).forEach((row) => {
+    leaderboardMap[row.user_id] = row;
+  });
+
+  return (profileRes.data || []).map((profile) => {
+    const leaderboard = leaderboardMap[profile.user_id] || null;
+
+    return {
+      user_id: profile.user_id,
+      name: profile.name || "Unnamed Student",
+      avatar_url: profile.avatar_url || null,
+      kalvium_email: profile.kalvium_email || profile.kalviumEmail || null,
+      squad_id: profile.squad_id || null,
+      leetcode_username: extractLeetcodeHandle(
+        profile.leetcode || profile.leetcode_url || leaderboard?.leetcode_username
+      ),
+      db_total_solved: Number(leaderboard?.total_solved) || 0,
+      db_last_solved_at: leaderboard?.last_solved_at || null,
+      is_suspended: Boolean(leaderboard?.is_suspended),
+    };
+  });
+}
+
+// Adds real-time LeetCode data to each student (parallel batches with a small
+// concurrency limit, so starting a session does not take N sequential round
+// trips to LeetCode)
+const LIVE_STATS_CONCURRENCY = 8;
+
+async function attachLiveStats(students = [], mode = "full") {
+  const enriched = new Array(students.length);
+
+  const worker = async (queue) => {
+    while (queue.length > 0) {
+      const index = queue.pop();
+      const student = students[index];
+
+      if (!student.leetcode_username) {
+        enriched[index] = {
+          ...student,
+          has_leetcode: false,
+          live_total_solved: null,
+          live_easy_solved: 0,
+          live_medium_solved: 0,
+          live_hard_solved: 0,
+          recent_submissions: [],
+          last_activity: student.db_last_solved_at,
+          fetch_failed: false,
+        };
+        continue;
+      }
+
+      const live = await fetchLiveLeetcodeStats(student.leetcode_username, mode);
+      const latestSubmission = live?.recentSubmissions?.[0] || null;
+
+      enriched[index] = {
+        ...student,
+        has_leetcode: true,
+        live_total_solved: live ? live.totalSolved : null,
+        live_easy_solved: live?.easySolved || 0,
+        live_medium_solved: live?.mediumSolved || 0,
+        live_hard_solved: live?.hardSolved || 0,
+        recent_submissions: live?.recentSubmissions || [],
+        last_activity: latestSubmission?.timestamp
+          ? new Date(latestSubmission.timestamp * 1000).toISOString()
+          : student.db_last_solved_at,
+        fetch_failed: !live,
+      };
+    }
+  };
+
+  const queue = students.map((_, index) => index);
+  const workerCount = Math.min(LIVE_STATS_CONCURRENCY, students.length);
+  const workers = Array.from({ length: workerCount }, () => worker(queue));
+  await Promise.all(workers);
+
+  return enriched;
+}
+
+// GET /mentor/dashboard/leetcode-session
+// Returns the mentor's active session together with a live LeetCode snapshot
+router.get("/leetcode-session", requireAuth, async (req, res) => {
+  try {
+    const mentorUserId = req.user.id;
+    const db = req.authedSupabase;
+
+    const { data: activeSession, error: sessionError } = await db
+      .from("mentor_leetcode_sessions")
+      .select("*")
+      .eq("mentor_id", mentorUserId)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (sessionError) {
+      return res.status(400).json({ error: sessionError.message });
+    }
+
+    if (!activeSession) {
+      return res.status(200).json({
+        active: false,
+        session: null,
+        students: [],
+        summary: null,
+        lastUpdated: null
+      });
+    }
+
+    return res.status(200).json(await buildSessionPayload(db, activeSession));
+  } catch (err) {
+    console.error("Session status error:", err);
+    return res.status(500).json({ error: "Failed to get session status" });
+  }
+});
+
+// POST /mentor/dashboard/leetcode-session/start
+router.post("/leetcode-session/start", requireAuth, async (req, res) => {
+  try {
+    const mentorUserId = req.user.id;
+    const { squad_ids } = req.body;
+    const db = req.authedSupabase;
+
+    if (!squad_ids || !Array.isArray(squad_ids) || squad_ids.length === 0) {
+      return res.status(400).json({ error: "Squad IDs are required" });
+    }
+
+    // A mentor may only monitor squads they actually own. Without this check a
+    // crafted request could watch another mentor's squad.
+    const { data: ownedSquads, error: ownedSquadsError } = await db
+      .from("mentor_squads")
+      .select("squad_id")
+      .eq("mentor_user_id", mentorUserId);
+
+    if (ownedSquadsError) {
+      console.error("Session squad ownership lookup failed:", ownedSquadsError);
+      return res.status(400).json({ error: ownedSquadsError.message });
+    }
+
+    const ownedSquadIds = new Set(
+      (ownedSquads || []).map((row) => String(row.squad_id))
+    );
+
+    const requestedSquadIds = squad_ids.map((id) => String(id));
+
+    const unownedSquadIds = requestedSquadIds.filter(
+      (id) => !ownedSquadIds.has(id)
+    );
+
+    if (unownedSquadIds.length > 0) {
+      return res.status(403).json({
+        error: "You can only monitor squads assigned to you",
+        unownedSquadIds,
+      });
+    }
+
+    // Only one live session per mentor - close any leftover active session
+    const { data: existingSession, error: existingError } = await db
+      .from("mentor_leetcode_sessions")
+      .select("id")
+      .eq("mentor_id", mentorUserId)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (existingError) {
+      return res.status(400).json({ error: existingError.message });
+    }
+
+    if (existingSession) {
+      sessionBaselines.delete(String(existingSession.id));
+
+      await db
+        .from("mentor_leetcode_sessions")
+        .update({
+          status: "ended",
+          ended_at: new Date().toISOString(),
+          last_activity: new Date().toISOString()
+        })
+        .eq("id", existingSession.id);
+    }
+
+    const { data: newSession, error: createError } = await db
+      .from("mentor_leetcode_sessions")
+      .insert([{
+        mentor_id: mentorUserId,
+        squad_ids: squad_ids,
+        status: "active",
+        started_at: new Date().toISOString(),
+        last_activity: new Date().toISOString()
+      }])
+      .select()
+      .single();
+
+    if (createError) {
+      console.error("Session creation error:", createError);
+      return res.status(500).json({ error: createError.message });
+    }
+
+    // Capture the live LeetCode baseline straight away, so "completed during
+    // session" is measured from this exact moment onwards. Fast mode (stats
+    // only, parallel) keeps session start snappy; recent submissions fill in
+    // on the first 30s refresh.
+    let payload = { active: false, session: newSession, students: [], summary: null };
+
+    try {
+      const baseStudents = await getSessionStudents(db, squad_ids);
+      const initialStudents = await attachLiveStats(baseStudents, "fast");
+
+      setSessionBaseline(newSession, initialStudents);
+
+      payload = await buildSessionPayload(db, newSession, "fast");
+    } catch (baselineError) {
+      console.warn(
+        "Session baseline capture failed:",
+        baselineError?.message || baselineError
+      );
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Session started successfully",
+      ...payload,
+    });
+  } catch (err) {
+    console.error("Start session error:", err);
+    return res.status(500).json({ error: "Failed to start session" });
+  }
+});
+
+// POST /mentor/dashboard/leetcode-session/end
+router.post("/leetcode-session/end", requireAuth, async (req, res) => {
+  try {
+    const mentorUserId = req.user.id;
+
+    const db = req.authedSupabase;
+
+    const { data: session, error: sessionError } = await db
+      .from("mentor_leetcode_sessions")
+      .select("id")
+      .eq("mentor_id", mentorUserId)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (sessionError) {
+      return res.status(400).json({ error: sessionError.message });
+    }
+
+    if (!session) {
+      return res.status(404).json({ error: "No active session found" });
+    }
+
+    const { error: updateError } = await db
+      .from("mentor_leetcode_sessions")
+      .update({ 
+        status: "ended", 
+        ended_at: new Date().toISOString(),
+        last_activity: new Date().toISOString()
+      })
+      .eq("id", session.id);
+
+    if (updateError) {
+      console.error("Session end error:", updateError);
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    // Drop the in-memory baseline - it is only valid for the live session
+    sessionBaselines.delete(String(session.id));
+
+    return res.status(200).json({
+      success: true,
+      message: "Session ended successfully"
+    });
+  } catch (err) {
+    console.error("End session error:", err);
+    return res.status(500).json({ error: "Failed to end session" });
+  }
+});
+
+// Snapshot used as the reference point for "did this student solve something
+// during the session?"
+function setSessionBaseline(session, students = []) {
+  if (!session?.id) return;
+
+  const users = {};
+  students.forEach((student) => {
+    users[student.user_id] = {
+      totalSolved: student.live_total_solved ?? student.db_total_solved ?? 0,
+      submissionIds: (student.recent_submissions || []).map((sub) => sub.id),
+    };
+  });
+
+  sessionBaselines.set(String(session.id), {
+    startedAt: session.started_at,
+    users,
+  });
+}
+
+// Compares the live snapshot against the baseline of the running session
+function withSessionActivity(students = [], session) {
+  const baseline = sessionBaselines.get(String(session?.id)) || null;
+  const startedAtMs = session?.started_at ? new Date(session.started_at).getTime() : 0;
+
+  return students.map((student) => {
+    const base = baseline?.users?.[student.user_id] || null;
+    const baseTotalSolved =
+      base?.totalSolved ?? student.live_total_solved ?? student.db_total_solved ?? 0;
+
+    const knownIds = new Set(base?.submissionIds || []);
+
+    const newSubmissions = (student.recent_submissions || []).filter(
+      (sub) => !knownIds.has(sub.id) && sub.timestamp * 1000 >= startedAtMs
+    );
+
+    const solvedDuringSession =
+      student.live_total_solved == null
+        ? 0
+        : Math.max(student.live_total_solved - baseTotalSolved, 0);
+
+    const completed = solvedDuringSession > 0 || newSubmissions.length > 0;
+
+    return {
+      ...student,
+      baseline_available: Boolean(base),
+      base_total_solved: baseTotalSolved,
+      solved_during_session: solvedDuringSession,
+      new_submissions: newSubmissions,
+      new_submissions_count: newSubmissions.length,
+      completed_during_session: completed,
+      completed_today: completed,
+      // Kept as an alias so existing UI code keeps working
+      solved_today: solvedDuringSession,
+    };
+  });
+}
+
+// Payload a mentor sees while a session is active
+function buildSessionSummary(students = []) {
+  const completed = students.filter((student) => student.completed_during_session);
+  const pending = students.filter((student) => !student.completed_during_session);
+
+  const toSummaryEntry = (student) => ({
+    user_id: student.user_id,
+    name: student.name,
+    avatar_url: student.avatar_url || null,
+    kalvium_email: student.kalvium_email || null,
+    squad_id: student.squad_id,
+    leetcode_username: student.leetcode_username,
+    has_leetcode: student.has_leetcode,
+    total_solved: student.live_total_solved ?? student.db_total_solved ?? 0,
+    base_total_solved: student.base_total_solved,
+    solved_during_session: student.solved_during_session,
+    new_submissions_count: student.new_submissions_count,
+    new_submissions: student.new_submissions,
+    last_activity: student.last_activity,
+    fetch_failed: student.fetch_failed,
+  });
+
+  return {
+    total: students.length,
+    completed: completed.length,
+    not_completed: pending.length,
+    completionRate: students.length
+      ? Math.round((completed.length / students.length) * 100)
+      : 0,
+    completedStudents: completed.map(toSummaryEntry),
+    notCompletedStudents: pending.map(toSummaryEntry),
+    // Aliases kept so the existing panel UI keeps working
+    completedToday: completed.length,
+    notCompletedToday: pending.length,
+  };
+}
+
+// Shared builder for GET /leetcode-session and GET /leetcode-session/update.
+// mode is "fast" on session start (stats only, returns quickly) and "full" on
+// refresh/update (stats + recent submissions for the activity diff).
+async function buildSessionPayload(db, session, mode = "full") {
+  const baseStudents = await getSessionStudents(db, session.squad_ids || []);
+
+  // A fresh session - or one restored after a server restart - has no baseline
+  // yet, so capture one now and compare later updates against it.
+  if (!sessionBaselines.has(String(session.id))) {
+    const initialStudents = await attachLiveStats(baseStudents, mode);
+    setSessionBaseline(session, initialStudents);
+
+    const students = withSessionActivity(initialStudents, session);
+
+    return {
+      active: true,
+      session,
+      students,
+      summary: buildSessionSummary(students),
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  const students = withSessionActivity(await attachLiveStats(baseStudents, mode), session);
+
+  return {
+    active: true,
+    session,
+    students,
+    summary: buildSessionSummary(students),
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
+// GET /mentor/dashboard/leetcode-session/update - Rate limited to 30s
+// requireAuth runs first so the limiter can key on the mentor's own id
+router.get("/leetcode-session/update", requireAuth, sessionRateLimiter, async (req, res) => {
+  try {
+    const mentorUserId = req.user.id;
+
+    const db = req.authedSupabase;
+
+    const { data: session, error: sessionError } = await db
+      .from("mentor_leetcode_sessions")
+      .select("*")
+      .eq("mentor_id", mentorUserId)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (sessionError) {
+      return res.status(400).json({ error: sessionError.message });
+    }
+
+    if (!session) {
+      return res.status(200).json({
+        active: false,
+        session: null,
+        students: [],
+        summary: null,
+        lastUpdated: null
+      });
+    }
+
+    // Heartbeat so stale sessions can be spotted
+    await db
+      .from("mentor_leetcode_sessions")
+      .update({ last_activity: new Date().toISOString() })
+      .eq("id", session.id);
+
+    // Live LeetCode snapshot diffed against the baseline captured at start
+    return res.status(200).json(await buildSessionPayload(db, session));
+  } catch (err) {
+    console.error("Session update error:", err);
+    return res.status(500).json({ error: "Failed to update session" });
+  }
+});
+
 export default router;

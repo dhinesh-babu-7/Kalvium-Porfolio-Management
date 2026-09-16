@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getLeaderboardData } from "../../api/routes/Public/leaderboard";
-import { getPendingReviewStatus } from "../../api/routes/StudentDashboard/dashboard";
 import "./leaderboard.css";
 
 const POINTS = {
@@ -38,11 +37,6 @@ function Leaderboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-
-  const [userPendingReview, setUserPendingReview] = useState({
-    hasPendingReview: false,
-    pendingReviewCount: 0,
-  });
 
   // ============================================================
   // FETCH LEADERBOARD
@@ -208,41 +202,6 @@ function Leaderboard() {
   }, []);
 
   // ============================================================
-  // CHECK PENDING REVIEW
-  // ============================================================
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const checkPendingReview = async () => {
-      try {
-        const status = await getPendingReviewStatus();
-
-        if (isMounted) {
-          setUserPendingReview({
-            hasPendingReview:
-              status?.hasPendingReview || false,
-
-            pendingReviewCount:
-              Number(status?.pendingReviewCount) || 0,
-          });
-        }
-      } catch (error) {
-        console.error(
-          "Failed to check pending review status:",
-          error
-        );
-      }
-    };
-
-    checkPendingReview();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // ============================================================
   // PODIUM
   // ============================================================
 
@@ -375,42 +334,6 @@ function Leaderboard() {
           </span>
         </div>
       </div>
-
-      {/* ============================================================
-          PENDING REVIEW NOTICE
-      ============================================================ */}
-
-      {userPendingReview.hasPendingReview && (
-        <div className="leaderboard-pending-notice">
-          <div className="pending-notice-content">
-            <span className="pending-icon">⏳</span>
-
-            <div>
-              <strong>
-                Your submissions are under mentor review
-              </strong>
-
-              <p>
-                You have{" "}
-                {userPendingReview.pendingReviewCount}{" "}
-                rapid submission
-                {userPendingReview.pendingReviewCount !== 1
-                  ? "s"
-                  : ""}{" "}
-                awaiting verification. Once approved,
-                you'll appear on the leaderboard.
-              </p>
-            </div>
-          </div>
-
-          <button
-            className="pending-notice-button"
-            onClick={() => navigate("/profile")}
-          >
-            View Status
-          </button>
-        </div>
-      )}
 
       {/* ============================================================
           ERROR
