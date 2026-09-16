@@ -15,7 +15,6 @@ import {
   Target
 } from "lucide-react";
 import { getGitHubStats, getLeetCodeStats } from "../../api/routes/StudentDashboard/dashboard";
-import PendingReviewBanner from "../../components/PendingReviewBanner";
 import "./DashboardTab.css";
 
 // ----------------------------------------------------------------------
@@ -148,8 +147,6 @@ export default function DashboardTab({ profile, fileName, isLoading }) {
 
   return (
     <div className="dt-container">
-      <PendingReviewBanner />
-      
       {/* Overview Cards Row */}
       <div className="dt-social-grid">
         

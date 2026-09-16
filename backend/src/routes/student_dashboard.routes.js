@@ -306,69 +306,219 @@ router.post("/leetcode", statsRouteLimiter, requireAuth, async (req, res) => {
 });
 
 // ==========================================
-// 5. GET Pending Mentor Review Status
+// 6. GET Projects from project_details table
 // ==========================================
-router.get("/pending-review", authRouteLimiter, requireAuth, async (req, res) => {
+router.get("/projects", authRouteLimiter, requireAuth, async (req, res) => {
     try {
         const userId = req.user.id;
 
-        // Get all pending submissions for this user
-        const { data: pendingSubmissions, error: submissionError } = await req.authedSupabase
-            .from("leetcode_submissions")
-            .select(`
-                id,
-                submission_id,
-                title_slug,
-                difficulty,
-                submitted_at,
-                flag_reason,
-                review_status
-            `)
+        const { data: projects, error: projectsError } = await req.authedSupabase
+            .from("project_details")
+            .select("*")
             .eq("user_id", userId)
-            .eq("review_status", "pending")
-            .order("submitted_at", { ascending: false });
+            .order("created_at", { ascending: false });
 
-        if (submissionError) {
-            console.error("Pending review fetch error:", submissionError);
-            return res.status(400).json({ error: submissionError.message });
+        if (projectsError) {
+            console.error("Projects fetch error:", projectsError);
+            return res.status(400).json({ error: projectsError.message });
         }
 
-        // Get profile info for display
-        const { data: profile, error: profileError } = await req.authedSupabase
-            .from("profiles")
-            .select("name")
-            .eq("user_id", userId)
-            .maybeSingle();
-
-        if (profileError) {
-            console.error("Profile fetch error:", profileError);
-            return res.status(400).json({ error: profileError.message });
-        }
-
-        // Get leetcode info from leaderboard
-        const { data: leaderboardData } = await req.authedSupabase
-            .from("leetcode_leaderboard")
-            .select("leetcode_username, total_solved, is_suspended")
-            .eq("user_id", userId)
-            .maybeSingle();
-
-        const hasPendingReview = (pendingSubmissions || []).length > 0;
-
-        return res.status(200).json({
-            hasPendingReview,
-            pendingReviewCount: pendingSubmissions?.length || 0,
-            submissions: pendingSubmissions || [],
-            profile: {
-                ...profile,
-                leetcode_username: leaderboardData?.leetcode_username || null,
-                total_solved: leaderboardData?.total_solved || 0,
-                is_suspended: leaderboardData?.is_suspended || false,
-            }
-        });
-
+        return res.status(200).json(projects || []);
     } catch (err) {
-        console.error("Pending review status error:", err);
-        return res.status(500).json({ error: "Failed to fetch pending review status: " + err.message });
+        console.error("Projects fetch error:", err);
+        return res.status(500).json({ error: "Failed to fetch projects: " + err.message });
+    }
+});
+
+// ==========================================
+// 7. POST Add a new project
+// ==========================================
+router.post("/projects", authRouteLimiter, requireAuth, async (req, res) => {
+    try {
+        const { name, description, githubUrl, team } = req.body;
+
+        if (!name || !description) {
+            return res.status(400).json({ error: "Project name and description are required." });
+        }
+
+        const cleanedTeam = Array.isArray(team)
+            ? team.filter((member) => member && member.trim() !== "")
+            : [];
+
+        const newProject = {
+            user_id: req.user.id,
+            name: name.trim(),
+            description: description.trim(),
+            github_url: githubUrl ? githubUrl.trim() : null,
+            team: cleanedTeam,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        const { data, error: insertError } = await req.authedSupabase
+            .from("project_details")
+            .insert([newProject])
+            .select()
+            .single();
+
+        if (insertError) {
+            console.error("Project insert error:", insertError);
+            return res.status(500).json({ error: insertError.message || "Failed to add project." });
+        }
+
+        return res.status(201).json(data);
+    } catch (err) {
+        console.error("Add project error:", err);
+        return res.status(500).json({ error: "Failed to add project: " + err.message });
+    }
+});
+
+// ==========================================
+// 8. DELETE a project
+// ==========================================
+router.delete("/projects/:id", authRouteLimiter, requireAuth, async (req, res) => {
+    try {
+        const projectId = req.params.id;
+        const userId = req.user.id;
+
+        // First verify the project belongs to this user
+        const { data: existingProject, error: fetchError } = await req.authedSupabase
+            .from("project_details")
+            .select("id")
+            .eq("id", projectId)
+            .eq("user_id", userId)
+            .maybeSingle();
+
+        if (fetchError) {
+            console.error("Project fetch error:", fetchError);
+            return res.status(400).json({ error: fetchError.message });
+        }
+
+        if (!existingProject) {
+            return res.status(404).json({ error: "Project not found or you don't have permission to delete it." });
+        }
+
+        const { error: deleteError } = await req.authedSupabase
+            .from("project_details")
+            .delete()
+            .eq("id", projectId);
+
+        if (deleteError) {
+            console.error("Project delete error:", deleteError);
+            return res.status(500).json({ error: deleteError.message || "Failed to delete project." });
+        }
+
+        return res.status(200).json({ message: "Project deleted successfully" });
+    } catch (err) {
+        console.error("Delete project error:", err);
+        return res.status(500).json({ error: "Failed to delete project: " + err.message });
+    }
+});
+
+// ==========================================
+// 9. GET Achievements from achievements table
+// ==========================================
+router.get("/achievements", authRouteLimiter, requireAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const { data: achievements, error: achievementsError } = await req.authedSupabase
+            .from("achievements")
+            .select("*")
+            .eq("user_id", userId)
+            .order("created_at", { ascending: false });
+
+        if (achievementsError) {
+            console.error("Achievements fetch error:", achievementsError);
+            return res.status(400).json({ error: achievementsError.message });
+        }
+
+        return res.status(200).json(achievements || []);
+    } catch (err) {
+        console.error("Achievements fetch error:", err);
+        return res.status(500).json({ error: "Failed to fetch achievements: " + err.message });
+    }
+});
+
+// ==========================================
+// 10. POST Add a new achievement
+// ==========================================
+router.post("/achievements", authRouteLimiter, requireAuth, async (req, res) => {
+    try {
+        const { title, description, category, icon, externalUrl } = req.body;
+
+        if (!title || !category) {
+            return res.status(400).json({ error: "Achievement title and category are required." });
+        }
+
+        const newAchievement = {
+            user_id: req.user.id,
+            title: title.trim(),
+            description: description ? description.trim() : null,
+            category: category.trim(),
+            icon: icon ? icon.trim() : null,
+            external_url: externalUrl ? externalUrl.trim() : null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        const { data, error: insertError } = await req.authedSupabase
+            .from("achievements")
+            .insert([newAchievement])
+            .select()
+            .single();
+
+        if (insertError) {
+            console.error("Achievement insert error:", insertError);
+            return res.status(500).json({ error: insertError.message || "Failed to add achievement." });
+        }
+
+        return res.status(201).json(data);
+    } catch (err) {
+        console.error("Add achievement error:", err);
+        return res.status(500).json({ error: "Failed to add achievement: " + err.message });
+    }
+});
+
+// ==========================================
+// 11. DELETE an achievement
+// ==========================================
+router.delete("/achievements/:id", authRouteLimiter, requireAuth, async (req, res) => {
+    try {
+        const achievementId = req.params.id;
+        const userId = req.user.id;
+
+        // First verify the achievement belongs to this user
+        const { data: existingAchievement, error: fetchError } = await req.authedSupabase
+            .from("achievements")
+            .select("id")
+            .eq("id", achievementId)
+            .eq("user_id", userId)
+            .maybeSingle();
+
+        if (fetchError) {
+            console.error("Achievement fetch error:", fetchError);
+            return res.status(400).json({ error: fetchError.message });
+        }
+
+        if (!existingAchievement) {
+            return res.status(404).json({ error: "Achievement not found or you don't have permission to delete it." });
+        }
+
+        const { error: deleteError } = await req.authedSupabase
+            .from("achievements")
+            .delete()
+            .eq("id", achievementId);
+
+        if (deleteError) {
+            console.error("Achievement delete error:", deleteError);
+            return res.status(500).json({ error: deleteError.message || "Failed to delete achievement." });
+        }
+
+        return res.status(200).json({ message: "Achievement deleted successfully" });
+    } catch (err) {
+        console.error("Delete achievement error:", err);
+        return res.status(500).json({ error: "Failed to delete achievement: " + err.message });
     }
 });
 

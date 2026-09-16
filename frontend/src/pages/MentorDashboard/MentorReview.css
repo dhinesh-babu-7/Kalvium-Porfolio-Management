@@ -4,8 +4,21 @@
 
 .mentor-review-page {
   width: 100%;
-  padding: 32px;
+  /* Matches the topbar's 40px side padding so the page lines up */
+  padding: 32px 40px 48px;
   box-sizing: border-box;
+}
+/* Responsive: aligns with the other mentor tabs */
+@media (max-width: 1024px) {
+  .mentor-review-page {
+    padding: 28px 24px 40px;
+  }
+}
+
+@media (max-width: 768px) {
+  .mentor-review-page {
+    padding: 20px 16px 32px;
+  }
 }
 
 

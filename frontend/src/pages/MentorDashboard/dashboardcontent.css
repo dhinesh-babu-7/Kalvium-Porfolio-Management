@@ -717,6 +717,12 @@
    RESPONSIVE DESIGN
 =========================== */
 
+@media (max-width: 1024px) {
+  .dashboard-content {
+    padding: 28px 24px 40px;
+  }
+}
+
 @media (max-width: 768px) {
   .dashboard-content {
     padding: 20px 16px 32px;

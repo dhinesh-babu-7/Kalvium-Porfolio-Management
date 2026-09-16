@@ -36,6 +36,7 @@ import {
 import { getGithubStats, getLeetcodeStats } from "../../api/routes/Public/StudentInfo.js";
 
 import "./assigned.css";
+import LeetCodeSessionPanel from "./LeetCodeSessionPanel.jsx";
 
 // ==========================================
 // SVG ICON COMPONENTS FOR GITHUB & LINKEDIN
@@ -590,6 +591,14 @@ export default function Assigned() {
 
   return (
     <div className="dashboard-layout">
+      {/* Real-time LeetCode Activity Monitor */}
+      <div className="lc-session-section">
+        <LeetCodeSessionPanel
+          squads={mentorSquads}
+          assignedStudents={safeAssignedStudents}
+        />
+      </div>
+
       {/* Metrics Row */}
       <div className="metrics-grid">
         <div

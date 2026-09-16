@@ -301,6 +301,12 @@
 }
 
 /* Mobile Responsiveness */
+@media (max-width: 1024px) {
+  .settings-container {
+    padding: 28px 24px 40px;
+  }
+}
+
 @media (max-width: 768px) {
   .settings-container {
     padding: 20px 16px 32px;

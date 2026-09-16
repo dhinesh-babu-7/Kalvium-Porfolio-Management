@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-/* Global Reset & Base */
+/* ==========================================
+   GLOBAL RESET & BASE STYLES
+   ========================================== */
 html, body {
   margin: 0;
   padding: 0;
@@ -24,32 +26,36 @@ html, body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-/* Dynamic Sidebar Margin Offsets with Smooth Transition */
+/* ==========================================
+   SIDEBAR LAYOUT & RESPONSIVE MARGINS
+   ========================================== */
 .dashboard-main {
   flex: 1;
   min-width: 0;
   width: 100%;
   display: flex;
   flex-direction: column;
-  transition: margin-left 0.2s ease-in-out, width 0.2s ease-in-out;
+  transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+              width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Sidebar expanded state */
 .mentor-dashboard > .pm-sidebar + .dashboard-main,
 .mentor-dashboard > aside.pm-sidebar + .dashboard-main {
   margin-left: 240px;
   width: calc(100% - 240px);
 }
 
+/* Sidebar collapsed state */
 .mentor-dashboard > .pm-sidebar.is-collapsed + .dashboard-main,
 .mentor-dashboard > aside.pm-sidebar.is-collapsed + .dashboard-main {
   margin-left: 72px;
   width: calc(100% - 72px);
 }
 
-/* ===========================
+/* ==========================================
    PERSISTENT STICKY TOP BAR
-=========================== */
-
+   ========================================== */
 .pm-topbar {
   position: sticky;
   top: 0;
@@ -58,23 +64,27 @@ html, body {
   justify-content: space-between;
   align-items: center;
   padding: 18px 40px;
-  background: rgba(248, 250, 252, 0.85);
+  background: rgba(248, 250, 252, 0.95);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(226, 232, 240, 0.8);
-  transition: padding 0.2s ease;
+  transition: padding 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
 }
 
 .pm-welcome {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
 .pm-wave {
-  font-size: 20px;
+  font-size: 24px;
   line-height: 1;
   display: inline-block;
+  flex-shrink: 0;
 }
 
 .pm-welcome-sub {
@@ -99,6 +109,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .pm-home-btn {
@@ -106,7 +117,7 @@ html, body {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   color: #0f172a;
@@ -114,56 +125,99 @@ html, body {
   font-weight: 600;
   text-decoration: none;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .pm-home-btn:hover {
   background: #f1f5f9;
   border-color: #cbd5e1;
-  color: #0f172a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08);
 }
 
-/* Dashboard Inner Layout Body */
+.pm-home-btn:active {
+  transform: translateY(0);
+}
+
+/* ==========================================
+   DASHBOARD BODY & CONTENT LAYOUT
+   ========================================== */
 .dashboard-body {
   width: 100%;
   min-width: 0;
+  flex: 1;
 }
 
 /* Students Layout Section */
 .students-layout {
   display: flex;
-  gap: 24px;
-  padding: 24px 40px 48px;
+  gap: 28px;
+  padding: 28px 40px 48px;
   align-items: flex-start;
   width: 100%;
   min-width: 0;
 }
 
 .students-left {
-  flex: 2;
+  flex: 1;
   min-width: 0;
-  width: 100%;
 }
 
 .students-right {
-  width: 280px;
+  width: 320px;
   flex-shrink: 0;
 }
 
-/* Responsive: Tablet / Narrow Desktop */
+/* ==========================================
+   RESPONSIVE: DESKTOP & WIDE SCREENS
+   ========================================== */
+@media (min-width: 1400px) {
+  .students-layout {
+    gap: 32px;
+    padding: 32px 48px 56px;
+  }
+
+  .students-right {
+    width: 340px;
+  }
+}
+
+/* ==========================================
+   RESPONSIVE: TABLETS & MEDIUM SCREENS
+   ========================================== */
 @media (max-width: 1100px) {
   .students-layout {
     flex-direction: column;
-    gap: 32px;
+    gap: 28px;
   }
 
   .students-left,
   .students-right {
     width: 100%;
   }
+
+  .pm-topbar {
+    padding: 16px 24px;
+  }
+
+  .mentor-dashboard > .pm-sidebar + .dashboard-main,
+  .mentor-dashboard > aside.pm-sidebar + .dashboard-main {
+    margin-left: 200px;
+    width: calc(100% - 200px);
+  }
+
+  .mentor-dashboard > .pm-sidebar.is-collapsed + .dashboard-main,
+  .mentor-dashboard > aside.pm-sidebar.is-collapsed + .dashboard-main {
+    margin-left: 64px;
+    width: calc(100% - 64px);
+  }
 }
 
-/* Responsive: Mobile */
+/* ==========================================
+   RESPONSIVE: MOBILE
+   ========================================== */
 @media (max-width: 768px) {
   .mentor-dashboard {
     flex-direction: column;
@@ -181,15 +235,39 @@ html, body {
   .dashboard-main {
     width: 100%;
     overflow-x: hidden;
-    overflow-y: visible;
   }
 
   .pm-topbar {
-    padding: 16px;
+    padding: 14px 16px;
+    gap: 10px;
+  }
+
+  .pm-welcome {
+    gap: 10px;
+  }
+
+  .pm-welcome-name {
+    font-size: 15px;
+  }
+
+  .pm-topbar-actions {
+    gap: 8px;
+  }
+
+  .pm-home-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    gap: 6px;
   }
 
   .students-layout {
+    flex-direction: column;
     padding: 16px 16px 32px;
-    gap: 24px;
+    gap: 20px;
+  }
+
+  .students-left,
+  .students-right {
+    width: 100%;
   }
 }
