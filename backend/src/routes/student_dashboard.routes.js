@@ -347,9 +347,9 @@ router.post("/projects", authRouteLimiter, requireAuth, async (req, res) => {
 
         const newProject = {
             user_id: req.user.id,
-            name: name.trim(),
-            description: description.trim(),
-            github_url: githubUrl ? githubUrl.trim() : null,
+            project_title: name.trim(),
+            project_desc: description.trim(),
+            github_repo: githubUrl ? githubUrl.trim() : null,
             team: cleanedTeam,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),

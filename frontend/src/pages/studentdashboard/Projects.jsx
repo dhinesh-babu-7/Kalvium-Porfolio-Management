@@ -1,7 +1,72 @@
 import React, { useState, useEffect } from "react";
-import { Plus, X, Trash2 } from "lucide-react";
+import { Plus, X, Trash2, ExternalLink } from "lucide-react";
 import { getProjects, createProject, deleteProject } from "../../api/routes/StudentDashboard/profile";
 import "./projects.css";
+
+
+const normalizeTeam = (team) => {
+  if (Array.isArray(team)) return team.filter(Boolean);
+  if (typeof team === "string" && team.trim() !== "") {
+    const trimmed = team.trim();
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+      } catch {
+        /* fall through to comma-split */
+      }
+    }
+    return trimmed.split(",").map((m) => m.trim()).filter(Boolean);
+  }
+  return [];
+};
+
+// Clamps description to 4 lines with a "Read more"/"Show less" toggle
+// that only appears when the text actually overflows.
+function ProjectDescription({ text }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const descRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const el = descRef.current;
+    if (!el) return;
+
+    const measure = () =>
+      setIsTruncated(el.scrollHeight > el.clientHeight + 1);
+
+    // Element is clamped by default, so overflow here means the text
+    // exceeds 4 lines.
+    measure();
+
+    // Re-measure once webfonts finish loading (line heights can change)
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(measure).catch(() => {});
+    }
+  }, [text]);
+
+  if (!text) return null;
+
+  return (
+    <>
+      <p
+        ref={descRef}
+        className={`project-desc ${isExpanded ? "expanded" : "clamped"}`}
+      >
+        {text}
+      </p>
+      {isTruncated && (
+        <button
+          type="button"
+          className="desc-toggle-btn"
+          onClick={() => setIsExpanded((prev) => !prev)}
+        >
+          {isExpanded ? "Show less" : "Read more"}
+        </button>
+      )}
+    </>
+  );
+}
 
 export default function Projects() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -9,6 +74,8 @@ export default function Projects() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [projectToDelete, setProjectToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -105,8 +172,12 @@ export default function Projects() {
     }
   };
 
-  const handleDeleteProject = async (projectId) => {
-    if (!window.confirm("Are you sure you want to delete this project?")) return;
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return;
+    const projectId = projectToDelete.id;
+
+    setIsDeleting(true);
+    setError(null);
 
     try {
       const result = await deleteProject(projectId);
@@ -118,6 +189,9 @@ export default function Projects() {
     } catch (err) {
       console.error("Error deleting project:", err);
       setError("Failed to delete project.");
+    } finally {
+      setIsDeleting(false);
+      setProjectToDelete(null);
     }
   };
 
@@ -161,29 +235,35 @@ export default function Projects() {
           {projects.map((proj) => (
             <div key={proj.id} className="card project-card">
               <div className="project-card-header">
-                <h3>{proj.name}</h3>
+                <h3>{proj.project_title || proj.name}</h3>
                 <button
                   className="project-delete-btn"
-                  onClick={() => handleDeleteProject(proj.id)}
+                  onClick={() => setProjectToDelete(proj)}
                   title="Delete project"
                 >
                   <Trash2 size={16} />
                 </button>
               </div>
-              <p>{proj.description}</p>
-              {proj.github_url && (
-                <a
-                  href={proj.github_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="project-github-link"
-                >
-                  <Github size={14} /> Repository
-                </a>
-              )}
-              {proj.team && proj.team.length > 0 && (
-                <div className="project-team-tags">
-                  <strong>Team:</strong> {proj.team.join(", ")}
+              <ProjectDescription text={proj.project_desc || proj.description} />
+              {(() => {
+                const teamMembers = normalizeTeam(proj.team);
+                return teamMembers.length > 0 && (
+                  <div className="project-team-tags">
+                    <strong>Team:</strong> {teamMembers.join(", ")}
+                  </div>
+                );
+              })()}
+              {(proj.github_repo || proj.github_url) && (
+                <div className="project-meta">
+                  <span className="project-category-label">Repository</span>
+                  <a
+                    href={proj.github_repo || proj.github_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="project-external-link"
+                  >
+                    <ExternalLink size={14} /> View
+                  </a>
                 </div>
               )}
               {proj.created_at && (
@@ -298,6 +378,47 @@ export default function Projects() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {projectToDelete && (
+        <div className="modal-overlay" onClick={() => !isDeleting && setProjectToDelete(null)}>
+          <div className="modal-content delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Delete Project</h3>
+              <button
+                className="close-btn"
+                onClick={() => setProjectToDelete(null)}
+                disabled={isDeleting}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="delete-confirm-text">
+              Are you sure you want to delete{" "}
+              <strong>{projectToDelete.project_title || projectToDelete.name}</strong>? This
+              action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-cancel"
+                onClick={() => setProjectToDelete(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-delete"
+                onClick={handleDeleteProject}
+                disabled={isDeleting}
+              >
+                <Trash2 size={14} /> {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
           </div>
         </div>
       )}

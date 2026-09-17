@@ -48,6 +48,7 @@
     background-size: 24px 24px, 100% 100%;
     background-attachment: fixed;
     flex: 1;
+    min-width: 0;
     animation: slideInFromBottom 0.8s ease-out forwards;
     color: white;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -342,6 +343,8 @@
     flex-direction: column;
     align-items: flex-start; 
     justify-content: center;
+    min-width: 0;
+    max-width: 100%;
 }
 
 /* SCOPED STUDENT NAME: Scoped under .profile-titles to prevent bleed into cards */
@@ -353,6 +356,9 @@
     color: #ffffff; 
     text-align: left;
     line-height: 1.1;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .student-title {
@@ -385,6 +391,16 @@
     border-bottom: 2px solid #333;
     padding-bottom: 10px;
     display: inline-block;
+}
+
+/* Separate consecutive card sections, including Projects and Achievements. */
+#portfolio-background .main-content-container > .projects-section + .projects-section {
+    margin-top: 40px;
+}
+
+/* Keep dashboard heading resets from removing the title-to-card spacing. */
+.projects-section > .section-title {
+    margin-bottom: 30px;
 }
 
 /* Coming Soon Component Styles */
@@ -623,8 +639,13 @@
         min-width: 80px;
     }
 
+    .profile-titles {
+        width: 100%;
+    }
+
     .profile-titles .student-name {
-        font-size: 3rem;
+        font-size: 2.25rem;
+        letter-spacing: -0.5px;
     }
 
     .student-title {
@@ -633,6 +654,7 @@
 
     .student-bio {
         font-size: 0.95rem;
+        overflow-wrap: anywhere;
     }
 
     .coding-profile-card {
@@ -651,6 +673,45 @@
         flex-direction: column;
         align-items: flex-start;
         gap: 12px;
+        width: 100%;
+    }
+
+    .profile-titles {
+        width: 100%;
+    }
+
+    .profile-titles .student-name {
+        font-size: 1.6rem;
+        letter-spacing: -0.25px;
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .student-title {
+        font-size: 0.95rem;
+    }
+
+    .profile-avatar {
+        width: 72px;
+        height: 72px;
+        min-width: 72px;
+    }
+
+    .section-title {
+        font-size: 1.5rem;
+    }
+
+    /* Prevent the 300px min card width from overflowing small screens */
+    .public-projects-grid,
+    .public-achievements-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .public-project-card,
+    .public-achievement-card {
+        padding: 16px;
     }
 
     .coding-profile-card {
@@ -683,4 +744,378 @@
         width: 90%;
         height: 36px;
     }
+}
+
+/* ==========================================================================
+   Public Projects & Achievements (Individual Portfolio)
+   ========================================================================== */
+.public-projects-grid,
+.public-achievements-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.public-project-card,
+.public-achievement-card {
+    background-color: rgba(17, 17, 17, 0.85);
+    backdrop-filter: blur(6px);
+    border: 1px solid #333333;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.public-project-card:hover,
+.public-achievement-card:hover {
+    border-color: #ff4d4d;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.public-project-title,
+.public-achievement-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #ffffff;
+    margin: 0 0 10px 0;
+}
+
+.public-project-desc,
+.public-achievement-desc {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: #b3b3b3;
+    margin: 0 0 8px 0;
+    flex-grow: 1;
+}
+
+/* Clamped description (4 lines max) with Read more toggle */
+.public-project-desc.clamped,
+.public-achievement-desc.clamped {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    flex-grow: 0;
+}
+
+.public-project-desc.expanded,
+.public-achievement-desc.expanded {
+    display: block;
+}
+
+.public-desc-toggle {
+    display: inline-block;
+    align-self: flex-start;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0 0 12px 0;
+    color: #60a5fa;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.public-desc-toggle:hover {
+    color: #93c5fd;
+    text-decoration: underline;
+}
+
+.public-desc-toggle:focus {
+    outline: none;
+}
+
+.public-desc-toggle:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.public-project-team {
+    font-size: 0.85rem;
+    color: #8c8c8c;
+    margin: 0 0 12px 0;
+    line-height: 1.5;
+}
+
+.public-project-team strong {
+    color: #b3b3b3;
+}
+
+.public-project-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid #2a2a2a;
+}
+
+.public-project-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #60a5fa;
+}
+
+.public-achievement-category {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.public-project-view {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #60a5fa;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.public-project-view:hover {
+    color: #93c5fd;
+    text-decoration: underline;
+}
+
+/* Achievement card icon badge */
+.public-achievement-header {
+    margin-bottom: 12px;
+}
+
+.public-achievement-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 10px;
+}
+
+/* Clock-handle spinner for project loading */
+.project-grid-loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 60px 20px;
+    color: #93c5fd;
+    font-size: 0.95rem;
+}
+
+.spinner-icon {
+    animation: spin 0.8s linear infinite;
+    color: #60a5fa;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Lazy-load fallback for the detail page */
+.project-detail-fallback {
+    padding: 20px 0;
+}
+
+.project-detail-skeleton {
+    background-color: rgba(17, 17, 17, 0.85);
+    backdrop-filter: blur(6px);
+    border: 1px solid #333333;
+    border-radius: 12px;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.skeleton-title {
+    height: 36px;
+    width: 65%;
+}
+
+.skeleton-text {
+    height: 16px;
+    width: 100%;
+}
+
+.skeleton-text.short {
+    width: 35%;
+}
+
+/* Project Detail Page Styles */
+.project-detail-card {
+    background-color: rgba(17, 17, 17, 0.85);
+    backdrop-filter: blur(6px);
+    border: 1px solid #333333;
+    border-radius: 12px;
+    padding: 32px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.project-detail-header {
+    margin-bottom: 24px;
+}
+
+.project-detail-title {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0 0 8px 0;
+}
+
+.project-detail-date {
+    font-size: 0.85rem;
+    color: #8c8c8c;
+    margin: 0;
+}
+
+.project-detail-desc {
+    font-size: 1rem;
+    line-height: 1.7;
+    color: #b3b3b3;
+    margin: 0 0 20px 0;
+    white-space: pre-wrap;
+}
+
+.project-detail-skeleton {
+    background-color: rgba(17, 17, 17, 0.85);
+    backdrop-filter: blur(6px);
+    border: 1px solid #333333;
+    border-radius: 12px;
+    padding: 32px;
+    max-width: 800px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ==========================================================================
+   "View All Projects" button (featured section)
+   ========================================================================== */
+.view-projects-wrapper {
+    display: flex;
+    justify-content: center;
+    margin-top: 32px;
+}
+
+.view-projects-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 26px;
+    border-radius: 8px;
+    background-color: #1a1a1a;
+    border: 1px solid #333333;
+    color: #e6e6e6;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color 0.2s ease, border-color 0.2s ease,
+        transform 0.2s ease, color 0.2s ease;
+}
+
+.view-projects-btn:hover {
+    background-color: #2a2a2a;
+    border-color: #ff4d4d;
+    color: #ffffff;
+    transform: translateY(-2px);
+}
+
+/* ==========================================================================
+   All Projects page  (/portfolio/:user_id/projects)
+   ========================================================================== */
+.all-projects-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 60px 5% 80px;
+}
+
+.all-projects-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #8c8c8c;
+    text-decoration: none;
+    margin-bottom: 28px;
+    transition: color 0.15s ease;
+}
+
+.all-projects-back:hover {
+    color: #ff4d4d;
+}
+
+.all-projects-header {
+    margin-bottom: 40px;
+}
+
+.all-projects-title {
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: #ffffff;
+    margin: 0 0 8px 0;
+}
+
+.all-projects-subtitle {
+    font-size: 1rem;
+    color: #8c8c8c;
+    margin: 0;
+}
+
+.all-projects-empty {
+    background-color: rgba(17, 17, 17, 0.85);
+    border: 1px dashed #333333;
+    border-radius: 12px;
+    padding: 48px 24px;
+    text-align: center;
+    color: #8c8c8c;
+    font-size: 1rem;
+}
+
+/* Secondary repository link inside the all-projects card */
+.public-project-repo {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #8c8c8c;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.public-project-repo:hover {
+    color: #93c5fd;
+    text-decoration: underline;
+}
+
+/* ==========================================================================
+   Standalone project detail page wrapper
+   ========================================================================== */
+.project-detail-page {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 60px 5% 80px;
+}
+
+.project-detail-page .project-detail-card {
+    max-width: none;
+    margin: 0;
 }

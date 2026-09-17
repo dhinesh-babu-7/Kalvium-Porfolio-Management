@@ -4,6 +4,8 @@ import Navbar from "./components/Navbar.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import Footer from "./components/Footer";
 import IndividualStudentPortfolio from "./pages/IndividualStudentPortfolio";
+import StudentProjectDetails from "./pages/StudentProjectDetails";
+import StudentProjectsAll from "./pages/StudentProjectsAll";
 import Students from "./pages/Students";
 import Leaderboard from "./pages/LeaderBoard/leaderboard.jsx";
 import EditProfile from "./pages/studentdashboard/EditProfile";
@@ -53,6 +55,8 @@ function App() {
         <Route path="/students" element={<Students />} />
         <Route path="/student/:user_id" element={<LegacyStudentRedirect />} />
         <Route path="/portfolio/:user_id" element={<IndividualStudentPortfolio />} />
+        <Route path="/portfolio/:user_id/projects" element={<StudentProjectsAll />} />
+        <Route path="/portfolio/:user_id/projects/:project_slug" element={<StudentProjectDetails />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
 
         {/* Protected Dashboard Route using AuthGate */}

@@ -1,16 +1,53 @@
 import "./IndividualStudentPortfolio.css";
-import { useParams, Navigate } from "react-router-dom"; // Added Navigate import
+import { useParams, Navigate, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getStudentByUserId, getGithubStats, getLeetcodeStats } from "../api/routes/Public/StudentInfo.js";
+import { getStudentByUserId, getGithubStats, getLeetcodeStats, getStudentProjects, getStudentAchievements } from "../api/routes/Public/StudentInfo.js";
+import {
+  ExternalLink,
+  Trophy,
+  Award,
+  Shield,
+  Code2,
+  Briefcase,
+  BookOpen,
+  Star,
+  LoaderCircle,
+  ArrowRight,
+} from "lucide-react";
+import ClampedDescription from "../components/ClampedDescription.jsx";
+import { normalizeTeam, projectDetailPath } from "../lib/projectUtils.js";
+
+const ACHIEVEMENT_CATEGORY_ICONS = {
+  Certificate: Trophy,
+  Award: Award,
+  Badge: Shield,
+  Hackathon: Code2,
+  Internship: Briefcase,
+  Course: BookOpen,
+  Other: Award,
+};
+
+const ACHIEVEMENT_CATEGORY_COLORS = {
+  Certificate: "#f59e0b",
+  Award: "#10b981",
+  Badge: "#3b82f6",
+  Hackathon: "#8b5cf6",
+  Internship: "#06b6d4",
+  Course: "#ec4899",
+  Other: "#64748b",
+};
 
 export default function IndividualStudentPortfolio() {
   const { user_id } = useParams();
 
   // 1. All hooks MUST be declared at the top level
-  const [student, setStudent] = useState(null);
+    const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [achievements, setAchievements] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -38,9 +75,23 @@ export default function IndividualStudentPortfolio() {
           ? getLeetcodeStats(profileData.leetcode).catch(() => null) 
           : Promise.resolve(null);
 
-        const [ghStats, lcStats] = await Promise.all([pGitHub, pLeetCode]);
+                // Public projects & achievements (non-fatal if they fail)
+        setProjects([]); // reset
+        setLoadingProjects(true);
+        const pProjects = getStudentProjects(user_id).catch(() => []);
+        const pAchievements = getStudentAchievements(user_id).catch(() => []);
+
+        const [ghStats, lcStats, publicProjects, publicAchievements] = await Promise.all([
+          pGitHub,
+          pLeetCode,
+          pProjects,
+          pAchievements,
+        ]);
 
         if (!isMounted) return;
+
+        if (Array.isArray(publicProjects)) setProjects(publicProjects);
+        if (Array.isArray(publicAchievements)) setAchievements(publicAchievements);
 
         setStudent(prev => ({
           ...prev,
@@ -66,6 +117,7 @@ export default function IndividualStudentPortfolio() {
         if (isMounted) {
           setLoading(false);
           setStatsLoading(false);
+          setLoadingProjects(false);
         }
       }
     };
@@ -88,6 +140,17 @@ export default function IndividualStudentPortfolio() {
   // Extract display usernames
   const githubUsername = student?.github_username || student?.github?.split("/").filter(Boolean).pop();
   const leetcodeUsername = student?.leetcode_username || student?.leetcode?.split("/").filter(Boolean).pop();
+
+  // Show only the 3 latest projects. The API already sorts by
+  // created_at desc, but we sort defensively so the featured list is
+  // correct even if the ordering ever changes.
+  const featuredProjects = [...projects]
+    .sort((a, b) => {
+      const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b?.created_at ? new Date(b.created_at).getTime() : 0;
+      return bTime - aTime;
+    })
+    .slice(0, 3);
 
   // Helper for displaying stats safely
   const renderStat = (val, fallback = 0) => {
@@ -313,19 +376,150 @@ export default function IndividualStudentPortfolio() {
 
           <section className="projects-section">
             <h3 className="section-title">Featured Projects</h3>
-            <div className="coming-soon-card">
-              <div className="coming-soon-icon">
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                  <circle cx="12" cy="13" r="3"></circle>
-                  <polyline points="12 11 12 13 13 13"></polyline>
-                </svg>
+            {loadingProjects ? (
+              <div className="project-grid-loader">
+                <LoaderCircle className="spinner-icon" />
+                <span>Loading projects...</span>
               </div>
-              <h4 className="coming-soon-title">Projects Coming Soon</h4>
-              <p className="coming-soon-desc">
-                This developer is currently working on exciting new projects. Check back soon to see their latest work!
-              </p>
-            </div>
+            ) : featuredProjects.length === 0 ? (
+              <div className="coming-soon-card">
+                <div className="coming-soon-icon">
+                  <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    <circle cx="12" cy="13" r="3"></circle>
+                    <polyline points="12 11 12 13 13 13"></polyline>
+                  </svg>
+                </div>
+                <h4 className="coming-soon-title">Projects Coming Soon</h4>
+                <p className="coming-soon-desc">
+                  This developer is currently working on exciting new projects. Check back soon to see their latest work!
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="public-projects-grid">
+                  {featuredProjects.map((proj) => {
+                    const teamMembers = normalizeTeam(proj.team);
+                    const repoUrl = proj.github_repo || proj.github_url;
+                    const projectTitle = proj.project_title || proj.name;
+                    const detailPath = projectDetailPath(user_id, proj);
+                    return (
+                      <article key={proj.id} className="public-project-card">
+                        <h4 className="public-project-title">
+                          {projectTitle}
+                        </h4>
+                        <ClampedDescription
+                          text={proj.project_desc || proj.description}
+                          className="public-project-desc"
+                          expandedText="Read more"
+                          asLink
+                          linkPath={detailPath}
+                        />
+                        {teamMembers.length > 0 && (
+                          <p className="public-project-team">
+                            <strong>Team:</strong> {teamMembers.join(", ")}
+                          </p>
+                        )}
+                        {repoUrl && (
+                          <div className="public-project-meta">
+                            <span className="public-project-label">Repository</span>
+                            <a
+                              href={repoUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="public-project-view"
+                            >
+                              <ExternalLink size={14} /> View
+                            </a>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+
+                {projects.length > 3 && (
+                  <div className="view-projects-wrapper">
+                    <Link
+                      to={`/portfolio/${user_id}/projects`}
+                      className="view-projects-btn"
+                    >
+                      View All Projects
+                      <ArrowRight size={16} />
+                    </Link>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+
+          <section className="projects-section">
+            <h3 className="section-title">Achievements</h3>
+            {loadingProjects ? (
+              <div className="project-grid-loader">
+                <LoaderCircle className="spinner-icon" />
+                <span>Loading achievements...</span>
+              </div>
+            ) : achievements.length === 0 ? (
+              <div className="coming-soon-card">
+                <div className="coming-soon-icon">
+                  <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="8" r="6"></circle>
+                    <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"></path>
+                  </svg>
+                </div>
+                <h4 className="coming-soon-title">No Achievements Yet</h4>
+                <p className="coming-soon-desc">
+                  This developer hasn&apos;t showcased any achievements yet. Check back soon to see their latest accomplishments!
+                </p>
+              </div>
+            ) : (
+              <div className="public-achievements-grid">
+                {achievements.map((ach) => {
+                  const IconComponent =
+                    ACHIEVEMENT_CATEGORY_ICONS[ach.category] || Star;
+                  const color =
+                    ACHIEVEMENT_CATEGORY_COLORS[ach.category] || "#64748b";
+                  return (
+                    <article key={ach.id} className="public-achievement-card">
+                      <div className="public-achievement-header">
+                        <div
+                          className="public-achievement-icon"
+                          style={{ backgroundColor: `${color}15`, color }}
+                        >
+                          <IconComponent size={22} />
+                        </div>
+                      </div>
+                      <h4 className="public-achievement-title">{ach.title}</h4>
+                      {ach.description && (
+                        <ClampedDescription
+                          text={ach.description}
+                          className="public-achievement-desc"
+                        />
+                      )}
+                      <div className="public-project-meta">
+                        <span
+                          className="public-achievement-category"
+                          style={{ color }}
+                        >
+                          {ach.category}
+                        </span>
+                        {ach.external_url && (
+                          <a
+                            href={ach.external_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="public-project-view"
+                          >
+                            <ExternalLink size={14} /> View
+                          </a>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <section className="contact-section">
