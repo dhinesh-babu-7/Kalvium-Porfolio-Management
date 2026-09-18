@@ -1271,6 +1271,8 @@ router.post("/leetcode-session/start", requireAuth, async (req, res) => {
 });
 
 // POST /mentor/dashboard/leetcode-session/end
+// Captures the final live snapshot BEFORE the baseline is dropped, so the
+// mentor can review / re-download this session later (Review Report).
 router.post("/leetcode-session/end", requireAuth, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
@@ -1279,7 +1281,7 @@ router.post("/leetcode-session/end", requireAuth, async (req, res) => {
 
     const { data: session, error: sessionError } = await db
       .from("mentor_leetcode_sessions")
-      .select("id")
+      .select("*")
       .eq("mentor_id", mentorUserId)
       .eq("status", "active")
       .maybeSingle();
@@ -1292,18 +1294,62 @@ router.post("/leetcode-session/end", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "No active session found" });
     }
 
+    let reportSnapshot = null;
+    const endedAt = new Date().toISOString();
+    try {
+      const baseStudents = await getSessionStudents(db, session.squad_ids || []);
+      const liveStudents = await attachLiveStats(baseStudents, "full");
+      const finalStudents = withSessionActivity(liveStudents, session);
+      reportSnapshot = buildSessionReportSnapshot(
+        { ...session, ended_at: endedAt },
+        finalStudents
+      );
+    } catch (snapshotError) {
+      console.warn(
+        "Final session snapshot capture failed:",
+        snapshotError?.message || snapshotError
+      );
+    }
+
+    const updatePayload = {
+      status: "ended",
+      ended_at: endedAt,
+      last_activity: endedAt,
+    };
+    // Older deployments may not have the column yet - only send it when a
+    // snapshot was actually captured so the update never fails on legacy DBs.
+    if (reportSnapshot) {
+      updatePayload.report_snapshot = reportSnapshot;
+    }
+
     const { error: updateError } = await db
       .from("mentor_leetcode_sessions")
-      .update({ 
-        status: "ended", 
-        ended_at: new Date().toISOString(),
-        last_activity: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq("id", session.id);
 
     if (updateError) {
-      console.error("Session end error:", updateError);
-      return res.status(500).json({ error: updateError.message });
+      // report_snapshot column missing on older DBs: retry as metadata-only
+      // rather than blocking the mentor from ending the session.
+      if (reportSnapshot && /report_snapshot/i.test(updateError.message || "")) {
+        console.warn(
+          "report_snapshot column missing - ending session without snapshot. Run backend/migrations/add_leetcode_session_reports.sql"
+        );
+        const { error: retryError } = await db
+          .from("mentor_leetcode_sessions")
+          .update({
+            status: "ended",
+            ended_at: endedAt,
+            last_activity: endedAt,
+          })
+          .eq("id", session.id);
+        if (retryError) {
+          console.error("Session end error:", retryError);
+          return res.status(500).json({ error: retryError.message });
+        }
+      } else {
+        console.error("Session end error:", updateError);
+        return res.status(500).json({ error: updateError.message });
+      }
     }
 
     // Drop the in-memory baseline - it is only valid for the live session
@@ -1311,13 +1357,101 @@ router.post("/leetcode-session/end", requireAuth, async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Session ended successfully"
+      message: "Session ended successfully",
+      report: reportSnapshot
+        ? {
+          session_id: session.id,
+          started_at: session.started_at,
+          ended_at: endedAt,
+          squad_ids: session.squad_ids || [],
+          summary: reportSnapshot.summary,
+        }
+        : null,
     });
   } catch (err) {
     console.error("End session error:", err);
     return res.status(500).json({ error: "Failed to end session" });
   }
 });
+
+// Snapshot helpers for the Review Report (persisted student activity).
+// The live session payload is trimmed before storing so the JSONB snapshot
+// stays small but still supports review + Excel export later.
+//
+// Trims the live student payload down to what the Review Report needs, so the
+// stored JSONB snapshot stays small but still supports view + Excel export.
+function buildSessionReportSnapshot(session, students = []) {
+  const summary = buildSessionSummary(students);
+
+  return {
+    version: 1,
+    generated_at: new Date().toISOString(),
+    session_id: session?.id ?? null,
+    started_at: session?.started_at ?? null,
+    ended_at: session?.ended_at ?? new Date().toISOString(),
+    squad_ids: (session?.squad_ids || []).map((id) => String(id)),
+    summary: {
+      total: summary.total,
+      completed: summary.completed,
+      not_completed: summary.not_completed,
+      completionRate: summary.completionRate,
+    },
+    students: students.map((student) => ({
+      user_id: student.user_id,
+      name: student.name || "Unnamed Student",
+      avatar_url: student.avatar_url || null,
+      kalvium_email: student.kalvium_email || null,
+      squad_id: student.squad_id ?? null,
+      leetcode_username: student.leetcode_username || null,
+      has_leetcode: Boolean(student.has_leetcode),
+      fetch_failed: Boolean(student.fetch_failed),
+      completed_during_session: Boolean(student.completed_during_session),
+      solved_during_session: student.solved_during_session ?? 0,
+      new_submissions_count: student.new_submissions_count ?? 0,
+      new_submissions: (student.new_submissions || []).map((sub) => ({
+        id: String(sub.id),
+        title: sub.title || "",
+        titleSlug: sub.titleSlug || "",
+        timestamp: Number(sub.timestamp) || 0,
+      })),
+      live_total_solved:
+        student.live_total_solved ?? student.db_total_solved ?? 0,
+      last_activity: student.last_activity || null,
+    })),
+  };
+}
+
+// Shapes one ended-session row for the Review Report list. Legacy sessions
+// (ended before snapshots existed) have report_snapshot = NULL, so they only
+// expose timing/squad metadata and are flagged accordingly.
+function toReviewReportRow(row) {
+  const snapshot = row.report_snapshot || null;
+  const summary = snapshot?.summary || null;
+  const students = Array.isArray(snapshot?.students) ? snapshot.students : null;
+  const startedAt = row.started_at || snapshot?.started_at || null;
+  const endedAt = row.ended_at || snapshot?.ended_at || null;
+
+  let durationMinutes = null;
+  if (startedAt && endedAt) {
+    const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+    if (!Number.isNaN(ms) && ms >= 0) {
+      durationMinutes = Math.round(ms / 60000);
+    }
+  }
+
+  return {
+    id: row.id,
+    started_at: startedAt,
+    ended_at: endedAt,
+    squad_ids: (row.squad_ids || []).map((id) => String(id)),
+    duration_minutes: durationMinutes,
+    has_detailed_report: Boolean(snapshot && students),
+    summary,
+    // Full student array is returned so the mentor can expand / export
+    // without a second round-trip.
+    students,
+  };
+}
 
 // Snapshot used as the reference point for "did this student solve something
 // during the session?"
@@ -1412,6 +1546,70 @@ function buildSessionSummary(students = []) {
     notCompletedToday: pending.length,
   };
 }
+
+// GET /mentor/dashboard/leetcode-session/reports?scope=last5|last3days
+// Mentor-scoped history for the Review Report button. Defaults to the last 5
+// ended sessions; scope=last3days uses a rolling 72h window on ended_at.
+router.get("/leetcode-session/reports", requireAuth, async (req, res) => {
+  try {
+    const mentorUserId = req.user.id;
+    const db = req.authedSupabase;
+    const scope = String(req.query.scope || "last5").toLowerCase();
+    const useLast3Days = scope === "last3days";
+
+    const fetchReports = async (withSnapshot) => {
+      let query = db
+        .from("mentor_leetcode_sessions")
+        .select(
+          withSnapshot
+            ? "id, mentor_id, squad_ids, status, started_at, ended_at, report_snapshot"
+            : "id, mentor_id, squad_ids, status, started_at, ended_at"
+        )
+        .eq("mentor_id", mentorUserId)
+        .eq("status", "ended")
+        .order("ended_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false })
+        .limit(useLast3Days ? 50 : 5);
+
+      if (useLast3Days) {
+        const cutoff = new Date(
+          Date.now() - 3 * 24 * 60 * 60 * 1000
+        ).toISOString();
+        query = query.gte("ended_at", cutoff);
+      }
+
+      return query;
+    };
+
+    let { data, error } = await fetchReports(true);
+
+    if (error && /report_snapshot/i.test(error.message || "")) {
+      console.warn(
+        "report_snapshot column missing - returning metadata-only reports. Run backend/migrations/add_leetcode_session_reports.sql"
+      );
+      ({ data, error } = await fetchReports(false));
+    }
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    let reports = (data || []).map(toReviewReportRow);
+
+    if (useLast3Days) {
+      const cutoffMs = Date.now() - 3 * 24 * 60 * 60 * 1000;
+      reports = reports.filter((row) => {
+        const endedMs = row.ended_at ? new Date(row.ended_at).getTime() : NaN;
+        return !Number.isNaN(endedMs) && endedMs >= cutoffMs;
+      });
+    }
+
+    return res.status(200).json({ scope, reports });
+  } catch (err) {
+    console.error("Session reports error:", err);
+    return res.status(500).json({ error: "Failed to load session reports" });
+  }
+});
 
 // Shared builder for GET /leetcode-session and GET /leetcode-session/update.
 // mode is "fast" on session start (stats only, returns quickly) and "full" on
