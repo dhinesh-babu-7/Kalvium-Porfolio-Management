@@ -198,6 +198,83 @@ router.get('/profiles/:user_id', singleStudentLimiter, async (req, res) => {
 });
 
 // ==========================================
+// 2b. GET public projects for a student
+// ==========================================
+router.get('/profiles/:user_id/projects', singleStudentLimiter, async (req, res) => {
+    try {
+        const { user_id } = req.params;
+
+        const { data, error } = await supabase
+            .from('project_details')
+            .select('id, project_title, project_desc, github_repo, team, created_at')
+            .eq('user_id', user_id)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Public projects fetch error:', error);
+            return res.status(400).json({ error: error.message });
+        }
+
+        return res.json(data || []);
+    } catch (err) {
+        return res.status(500).json({ error: 'Internal Server Error', details: err.message });
+    }
+});
+
+// ==========================================
+// 2b-1. GET a single public project by ID
+// ==========================================
+router.get('/profiles/:user_id/projects/:project_id', singleStudentLimiter, async (req, res) => {
+    try {
+        const { user_id, project_id } = req.params;
+
+        const { data, error } = await supabase
+            .from('project_details')
+            .select('id, project_title, project_desc, github_repo, team, created_at')
+            .eq('user_id', user_id)
+            .eq('id', project_id)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return res.status(404).json({ error: 'Project not found' });
+            }
+            console.error('Public project fetch error:', error);
+            return res.status(400).json({ error: error.message });
+        }
+
+        return res.json(data);
+    } catch (err) {
+        return res.status(500).json({ error: 'Internal Server Error', details: err.message });
+    }
+});
+
+// ==========================================
+// 2c. GET public achievements for a student
+// ==========================================
+router.get('/profiles/:user_id/achievements', singleStudentLimiter, async (req, res) => {
+    try {
+        const { user_id } = req.params;
+
+        // Public reads use the anon client and respect the achievements SELECT policy.
+        const { data, error } = await supabase
+            .from('achievements')
+            .select('id, title, description, category, icon, external_url, created_at')
+            .eq('user_id', user_id)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Public achievements fetch error:', error);
+            return res.status(400).json({ error: error.message });
+        }
+
+        return res.json(data || []);
+    } catch (err) {
+        return res.status(500).json({ error: 'Internal Server Error', details: err.message });
+    }
+});
+
+// ==========================================
 // 3. PUT / UPDATE Student Profile
 // ==========================================
 router.put("/updateprofile", updateProfileLimiter, async (req, res) => {

@@ -17,6 +17,24 @@ export const getStudentByUserId = async (userId) => {
   return response.data;
 };
 
+// Fetches a student's public projects
+export const getStudentProjects = async (userId) => {
+  const response = await apiClient.get(`/public/profiles/${userId}/projects`);
+  return response.data;
+};
+
+// Fetches a single public project by ID
+export const getStudentProjectById = async (userId, projectId) => {
+  const response = await apiClient.get(`/public/profiles/${userId}/projects/${projectId}`);
+  return response.data;
+};
+
+// Fetches a student's public achievements
+export const getStudentAchievements = async (userId) => {
+  const response = await apiClient.get(`/public/profiles/${userId}/achievements`);
+  return response.data;
+};
+
 // Fetches GitHub Stats
 export const getGithubStats = async (url) => {
   const response = await apiClient.post('/public/github', { url });

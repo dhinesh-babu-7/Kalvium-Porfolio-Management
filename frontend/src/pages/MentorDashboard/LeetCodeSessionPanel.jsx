@@ -2,10 +2,12 @@ import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import {
   Play, Square, Clock, CheckCircle2, UserX,
-  AlertCircle, RefreshCw, Activity, Download, Users
+  AlertCircle, RefreshCw, Activity, Download, Users,
+  FileText, ChevronDown, History
 } from "lucide-react";
 import {
   getLeetcodeSession,
+  getLeetcodeSessionReports,
   startLeetcodeSession,
   endLeetcodeSession,
   updateLeetcodeSession
@@ -106,8 +108,300 @@ function SessionStudentRow({ student, completed }) {
   );
 }
 
-// Splits the roster into "completed" and "not completed" so a mentor can see at
-// a glance who is on track during the active session.
+const REVIEW_SCOPES = [
+  { value: "last5", label: "Last 5 reports" },
+  { value: "last3days", label: "Last 3 days" },
+];
+
+// A stored review report keeps trimmed student rows; map them back to the live
+// session row shape so SessionStudentRow + the Excel export can be reused.
+const reviewReportToSessionPayload = (report) => {
+  if (!report) return null;
+  const students = Array.isArray(report.students) ? report.students : [];
+  const summary = report.summary || {};
+  return {
+    session: {
+      id: report.id,
+      started_at: report.started_at,
+      ended_at: report.ended_at,
+      squad_ids: report.squad_ids || [],
+    },
+    students: students.map((student) => ({
+      user_id: student.user_id,
+      name: student.name,
+      avatar_url: student.avatar_url,
+      kalvium_email: student.kalvium_email,
+      squad_id: student.squad_id,
+      leetcode_username: student.leetcode_username,
+      has_leetcode: student.has_leetcode,
+      fetch_failed: student.fetch_failed,
+      completed_during_session: student.completed_during_session,
+      solved_during_session: student.solved_during_session,
+      new_submissions_count: student.new_submissions_count,
+      new_submissions: student.new_submissions || [],
+      live_total_solved: student.live_total_solved,
+      last_activity: student.last_activity,
+    })),
+    summary: {
+      total: summary.total ?? students.length,
+      completed: summary.completed ?? 0,
+      not_completed: summary.not_completed ?? 0,
+      completionRate: summary.completionRate ?? 0,
+      completedToday: summary.completed ?? 0,
+      notCompletedToday: summary.not_completed ?? 0,
+    },
+  };
+};
+
+const formatReportDateTime = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const formatDuration = (minutes) => {
+  if (minutes === null || minutes === undefined) return "-";
+  if (minutes < 1) return "< 1 min";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+};
+// Past ended sessions for the current mentor, expandable with per-student
+// detail + Excel export. Supports "Last 5 reports" and "Last 3 days".
+function ReviewReportSection({ buildReport, downloadReport, isExporting }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [scope, setScope] = useState("last5");
+  const [reports, setReports] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [reportError, setReportError] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+
+  const fetchReports = async (nextScope) => {
+    setIsLoading(true);
+    setReportError(null);
+    try {
+      const data = await getLeetcodeSessionReports(nextScope);
+      if (data?.error) {
+        setReportError(data.error);
+        setReports([]);
+      } else {
+        setReports(Array.isArray(data?.reports) ? data.reports : []);
+      }
+    } catch (err) {
+      console.error("Error fetching session reports:", err);
+      setReportError("Failed to load session reports");
+      setReports([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleOpen = () => {
+    const nextOpen = !isOpen;
+    setIsOpen(nextOpen);
+    if (nextOpen && reports.length === 0 && !isLoading) {
+      fetchReports(scope);
+    }
+  };
+
+  const handleScopeChange = (event) => {
+    const nextScope = event.target.value;
+    setScope(nextScope);
+    setExpandedId(null);
+    fetchReports(nextScope);
+  };
+
+  const handleDownload = (report) => {
+    const payload = reviewReportToSessionPayload(report);
+    if (!payload) return;
+    downloadReport(buildReport(payload));
+  };
+
+  return (
+    <div className="ls-review">
+      <button
+        type="button"
+        className="ls-btn ls-btn-review"
+        onClick={toggleOpen}
+        aria-expanded={isOpen}
+      >
+        <FileText size={18} />
+        Review Report
+        <ChevronDown
+          size={16}
+          className={`ls-review-chevron ${isOpen ? "ls-review-chevron-open" : ""}`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="ls-review-panel">
+          <div className="ls-review-toolbar">
+            <span className="ls-review-title">
+              <History size={14} />
+              Past sessions
+            </span>
+            <select
+              className="ls-review-scope"
+              value={scope}
+              onChange={handleScopeChange}
+              disabled={isLoading}
+              aria-label="Review report range"
+            >
+              {REVIEW_SCOPES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {reportError && (
+            <div className="ls-review-error">
+              <AlertCircle size={14} />
+              <span>{reportError}</span>
+            </div>
+          )}
+
+          {isLoading && (
+            <p className="ls-review-empty">Loading session reports…</p>
+          )}
+          {!isLoading && reports.length === 0 && !reportError && (
+            <p className="ls-review-empty">
+              No ended sessions found
+              {scope === "last3days" ? " in the last 3 days" : " yet"}. Sessions
+              you end will appear here.
+            </p>
+          )}
+
+          {!isLoading && reports.length > 0 && (
+            <ReviewReportList
+              reports={reports}
+              expandedId={expandedId}
+              isExporting={isExporting}
+              onToggle={(id) => setExpandedId(expandedId === id ? null : id)}
+              onDownload={handleDownload}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReviewReportList({ reports, expandedId, isExporting, onToggle, onDownload }) {
+  return (
+    <ul className="ls-review-list">
+      {reports.map((report) => {
+        const expanded = expandedId === report.id;
+        const summary = report.summary || {};
+        const total = summary.total ?? report.students?.length ?? 0;
+        const completed = summary.completed ?? 0;
+        const rate = summary.completionRate ?? 0;
+
+        return (
+          <li key={report.id} className="ls-review-item">
+            <button
+              type="button"
+              className="ls-review-item-head"
+              onClick={() => onToggle(report.id)}
+              aria-expanded={expanded}
+            >
+              <span className="ls-review-item-main">
+                <span className="ls-review-item-title">
+                  Session #{report.id}
+                  {!report.has_detailed_report && (
+                    <span className="ls-review-legacy-tag">
+                      session info only
+                    </span>
+                  )}
+                </span>
+                <span className="ls-review-item-sub">
+                  {formatReportDateTime(report.started_at)}
+                  {" → "}
+                  {formatReportDateTime(report.ended_at)}
+                  {" · "}
+                  {formatDuration(report.duration_minutes)}
+                  {" · Squads: "}
+                  {(report.squad_ids || []).join(", ") || "-"}
+                </span>
+              </span>
+              <span className="ls-review-item-stats">
+                {report.has_detailed_report
+                  ? `${completed}/${total} completed (${rate}%)`
+                  : "session info only"}
+              </span>
+              <ChevronDown
+                size={16}
+                className={`ls-review-chevron ${expanded ? "ls-review-chevron-open" : ""}`}
+              />
+            </button>
+
+            {expanded && (
+              <ReviewReportDetail
+                report={report}
+                isExporting={isExporting}
+                onDownload={onDownload}
+              />
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function ReviewReportDetail({ report, isExporting, onDownload }) {
+  if (!report.has_detailed_report) {
+    return (
+      <div className="ls-review-item-body">
+        <p className="ls-review-empty">
+          This session ended before detailed reports were saved, so only timing
+          and squad info is available.
+        </p>
+      </div>
+    );
+  }
+
+  const summary = report.summary || {};
+  return (
+    <div className="ls-review-item-body">
+      <div className="ls-review-summary">
+        <span>Total: {summary.total ?? 0}</span>
+        <span>Completed: {summary.completed ?? 0}</span>
+        <span>Not completed: {summary.not_completed ?? 0}</span>
+        <span>Completion: {summary.completionRate ?? 0}%</span>
+      </div>
+      <div className="ls-review-students">
+        {(report.students || []).map((student) => (
+          <SessionStudentRow
+            key={student.user_id || student.name}
+            student={{ ...student, new_submissions: student.new_submissions || [] }}
+            completed={Boolean(student.completed_during_session)}
+          />
+        ))}
+      </div>
+      <button
+        type="button"
+        className="ls-btn ls-btn-download ls-review-download"
+        onClick={() => onDownload(report)}
+        disabled={isExporting}
+      >
+        <Download size={16} />
+        {isExporting ? "Preparing..." : "Download this report (.xlsx)"}
+      </button>
+    </div>
+  );
+}
+
+// Splits the roster into completed / not completed for the active view.
+
 function StudentActivityGroups({ students, summary }) {
   const completed =
     Array.isArray(summary?.completedStudents) && summary.completedStudents.length > 0
@@ -685,14 +979,21 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
       {/* Session Controls */}
       <div className="ls-controls">
         {!isActive ? (
-          <button
-            className="ls-btn ls-btn-start"
-            onClick={handleStartSession}
-            disabled={isStarting || !squads || squads.length === 0}
-          >
-            <Play size={18} />
-            {isStarting ? "Starting..." : "Start Session"}
-          </button>
+          <div className="ls-controls-active">
+            <button
+              className="ls-btn ls-btn-start"
+              onClick={handleStartSession}
+              disabled={isStarting || !squads || squads.length === 0}
+            >
+              <Play size={18} />
+              {isStarting ? "Starting..." : "Start Session"}
+            </button>
+            <ReviewReportSection
+              buildReport={buildSessionReport}
+              downloadReport={downloadSessionReport}
+              isExporting={isExporting}
+            />
+          </div>
         ) : (
           <div className="ls-controls-active">
             <button
@@ -854,6 +1155,11 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
                 </button>
               </div>
             )}
+            <ReviewReportSection
+              buildReport={buildSessionReport}
+              downloadReport={downloadSessionReport}
+              isExporting={isExporting}
+            />
             <ul className="ls-features">
               <li>Track which students complete LeetCode problems during the session</li>
               <li>Live donut chart showing completed vs not completed</li>

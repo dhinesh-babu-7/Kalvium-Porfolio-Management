@@ -43,6 +43,21 @@ export async function endLeetcodeSession() {
     }
 }
 
+export async function getLeetcodeSessionReports(scope = "last5") {
+    const token = await jwt();
+    if (token === null) return { scope, reports: [] };
+    try {
+        const response = await apiClient.get("/mentor/dashboard/leetcode-session/reports", {
+            params: { scope },
+            headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" }
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching session reports:", error);
+        return { scope, reports: [], error: "Failed to load session reports" };
+    }
+}
+
 export async function updateLeetcodeSession() {
     const token = await jwt();
     if (token === null) return { active: false, message: "No active session" };
