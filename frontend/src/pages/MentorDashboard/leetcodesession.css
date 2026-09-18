@@ -1077,6 +1077,43 @@
   color: var(--text-secondary);
 }
 
+.ls-review-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--kalvium-bg);
+  border: 1px solid var(--kalvium-border-subtle);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.ls-review-filter-btn {
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.ls-review-filter-btn:hover {
+  color: var(--kalvium-dark);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.ls-review-filter-btn-active {
+  background: #ffffff;
+  color: var(--kalvium-dark);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--kalvium-border-subtle);
+}
+
 .ls-review-students {
   display: flex;
   flex-direction: column;
