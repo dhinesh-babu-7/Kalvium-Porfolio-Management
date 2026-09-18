@@ -358,6 +358,12 @@ function ReviewReportList({ reports, expandedId, isExporting, onToggle, onDownlo
 }
 
 function ReviewReportDetail({ report, isExporting, onDownload }) {
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  useEffect(() => {
+    setStatusFilter("all");
+  }, [report?.id]);
+
   if (!report.has_detailed_report) {
     return (
       <div className="ls-review-item-body">
@@ -370,6 +376,26 @@ function ReviewReportDetail({ report, isExporting, onDownload }) {
   }
 
   const summary = report.summary || {};
+  const students = Array.isArray(report.students) ? report.students : [];
+  const completedStudents = students.filter((student) =>
+    Boolean(student.completed_during_session)
+  );
+  const notCompletedStudents = students.filter(
+    (student) => !Boolean(student.completed_during_session)
+  );
+  const visibleStudents =
+    statusFilter === "completed"
+      ? completedStudents
+      : statusFilter === "not_completed"
+        ? notCompletedStudents
+        : students;
+
+  const FILTER_OPTIONS = [
+    { value: "all", label: `All (${students.length})` },
+    { value: "completed", label: `Completed (${completedStudents.length})` },
+    { value: "not_completed", label: `Not completed (${notCompletedStudents.length})` },
+  ];
+
   return (
     <div className="ls-review-item-body">
       <div className="ls-review-summary">
@@ -378,14 +404,45 @@ function ReviewReportDetail({ report, isExporting, onDownload }) {
         <span>Not completed: {summary.not_completed ?? 0}</span>
         <span>Completion: {summary.completionRate ?? 0}%</span>
       </div>
+      <div
+        className="ls-review-filter"
+        role="tablist"
+        aria-label="Filter students by completion status"
+      >
+        {FILTER_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="tab"
+            aria-selected={statusFilter === option.value}
+            className={`ls-review-filter-btn ${
+              statusFilter === option.value
+                ? "ls-review-filter-btn-active"
+                : ""
+            }`}
+            onClick={() => setStatusFilter(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
       <div className="ls-review-students">
-        {(report.students || []).map((student) => (
+        {visibleStudents.map((student) => (
           <SessionStudentRow
             key={student.user_id || student.name}
             student={{ ...student, new_submissions: student.new_submissions || [] }}
             completed={Boolean(student.completed_during_session)}
           />
         ))}
+        {visibleStudents.length === 0 && (
+          <p className="ls-review-empty">
+            {statusFilter === "completed"
+              ? "No students completed a problem in this session."
+              : statusFilter === "not_completed"
+                ? "Every student completed a problem in this session."
+                : "No students in this report."}
+          </p>
+        )}
       </div>
       <button
         type="button"
@@ -1012,6 +1069,11 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
               <RefreshCw size={18} className={isUpdating ? "spin" : ""} />
               {isUpdating ? "Updating..." : "Refresh"}
             </button>
+            <ReviewReportSection
+              buildReport={buildSessionReport}
+              downloadReport={downloadSessionReport}
+              isExporting={isExporting}
+            />
           </div>
         )}
       </div>
