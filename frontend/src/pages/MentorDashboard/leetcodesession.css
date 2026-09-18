@@ -5,7 +5,7 @@
   border: 1px solid var(--kalvium-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .ls-header {
@@ -73,6 +73,9 @@
 .ls-controls-active {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .ls-btn {

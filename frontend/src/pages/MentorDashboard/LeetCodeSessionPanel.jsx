@@ -1069,6 +1069,11 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
               <RefreshCw size={18} className={isUpdating ? "spin" : ""} />
               {isUpdating ? "Updating..." : "Refresh"}
             </button>
+            <ReviewReportSection
+              buildReport={buildSessionReport}
+              downloadReport={downloadSessionReport}
+              isExporting={isExporting}
+            />
           </div>
         )}
       </div>
