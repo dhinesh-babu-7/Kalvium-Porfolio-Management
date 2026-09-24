@@ -1,0 +1,149 @@
+/* Access-denied page. Mirrors the public site's design language (Inter,
+   #e8342a brand accent, #111827 headings, #6b7280 body copy, 14px button
+   radius) so a role-gate dead end still looks like part of the website. */
+
+.access-denied {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+    color: #111827;
+}
+
+.access-denied__main {
+    flex: 1;
+    width: 100%;
+    display: grid;
+    place-items: center;
+    padding: 72px 28px;
+}
+
+.access-denied__card {
+    width: min(560px, 100%);
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 24px;
+    padding: 44px 36px;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+    display: grid;
+    justify-items: center;
+    gap: 14px;
+    text-align: center;
+}
+
+.access-denied__icon {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #fef2f2;
+    color: #e8342a;
+}
+
+.access-denied__eyebrow {
+    margin: 0;
+    color: #e8342a;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.access-denied__title {
+    margin: 0;
+    color: #111827;
+    font-size: clamp(26px, 3vw, 34px);
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.access-denied__body {
+    margin: 0;
+    max-width: 44ch;
+    color: #6b7280;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.access-denied__body strong {
+    color: #111827;
+    font-weight: 600;
+}
+
+.access-denied__path {
+    margin: 0;
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+.access-denied__path code {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 2px 8px;
+    color: #475569;
+    font-size: 12.5px;
+}
+
+.access-denied__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.access-denied__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: transform 0.25s ease, background-color 0.25s ease,
+        color 0.25s ease, border-color 0.25s ease;
+}
+
+.access-denied__btn--primary {
+    background: #e8342a;
+    color: #ffffff;
+}
+
+.access-denied__btn--primary:hover {
+    background: #d92b22;
+    transform: translateY(-1px);
+}
+
+.access-denied__btn--ghost {
+    background: #ffffff;
+    color: #111827;
+    border-color: #dcdcdc;
+}
+
+.access-denied__btn--ghost:hover {
+    background: #fafafa;
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+}
+
+.access-denied__btn:focus-visible {
+    outline: 2px solid #e8342a;
+    outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+    .access-denied__main {
+        padding: 48px 18px;
+    }
+
+    .access-denied__card {
+        padding: 34px 22px;
+    }
+}

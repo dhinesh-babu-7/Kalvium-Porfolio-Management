@@ -1,18 +1,20 @@
 import "./Hero.css"
 import { NavLink, useNavigate } from "react-router-dom";
 import { HiArrowRight } from "react-icons/hi2"
-import { useAuthStatus } from "../../hooks/useAuthStatus";
+import { useUserRole } from "../../hooks/useAuthStatus";
+import { MENTOR_HOME, STUDENT_HOME } from "../../components/AuthGate";
 
 const DEFAULT_ILLUSTRATION_SRC =
     "https://framerusercontent.com/images/UcRcemWjmvw9CDCy1JIXixcBqg.svg?width=500&height=500&kb=48"
 
 export default function Hero({ illustrationSrc = DEFAULT_ILLUSTRATION_SRC }) {
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuthStatus();
+    const { isAuthenticated, role } = useUserRole();
+    const dashboardHome = role === "mentor" ? MENTOR_HOME : STUDENT_HOME;
 
     const handleLoginClick = (e) => {
         e.preventDefault();
-        navigate(isAuthenticated ? "/dashboard" : "/login");
+        navigate(isAuthenticated ? dashboardHome : "/login");
     };
     return (
         <section className="hero" aria-labelledby="kalvium-hero-title">
@@ -44,7 +46,7 @@ export default function Hero({ illustrationSrc = DEFAULT_ILLUSTRATION_SRC }) {
                             />
                         </NavLink>
                         <NavLink
-                            to={isAuthenticated ? "/dashboard" : "/login"}
+                            to={isAuthenticated ? dashboardHome : "/login"}
                             href="#"
                             onClick={handleLoginClick}
                             className="hero__button hero__button--secondary"

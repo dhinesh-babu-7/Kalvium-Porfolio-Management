@@ -1,5 +1,4 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Home } from "lucide-react";
 
 import Sidebar from "./sidebar";
@@ -11,8 +10,15 @@ import MentorReview from "./MentorReview";
 
 import "./mentordashboard.css";
 
+// URL slugs <-> tab labels live in ./dashboardRoutes.js so both App.jsx and
+// this component share one mapping without breaking react-refresh.
+import { mentorLabelToSlug, mentorSlugToLabel, mentorTabPath } from "./dashboardRoutes.js";
+
 const MentorDashboard = ({ profile, isLoading = false }) => {
-  const [activeNav, setActiveNav] = useState("Dashboard");
+  const { tab } = useParams();
+  const navigate = useNavigate();
+  const activeNav = mentorSlugToLabel(tab);
+  const setActiveNav = (label) => navigate(mentorTabPath(mentorLabelToSlug(label)));
 
   const userName =
     profile?.user_metadata?.full_name ||

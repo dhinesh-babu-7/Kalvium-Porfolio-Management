@@ -123,6 +123,53 @@
   color: white;
 }
 
+.ls-auto-refresh {
+  gap: 10px;
+  background: var(--accent-green-bg);
+  color: var(--accent-green);
+  border: 1px solid var(--accent-green-border);
+  min-width: 190px;
+}
+
+.ls-auto-refresh:hover {
+  filter: brightness(0.97);
+}
+
+.ls-auto-refresh-off {
+  background: var(--kalvium-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--kalvium-border);
+}
+
+.ls-auto-refresh-label {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ls-auto-refresh-ring {
+  --ls-refresh-pct: 100%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex: none;
+  background: conic-gradient(
+    var(--accent-green) var(--ls-refresh-pct),
+    rgba(22, 163, 74, 0.18) var(--ls-refresh-pct)
+  );
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.ls-auto-refresh-ring::after {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
 .ls-btn-download {
   background: #16a34a;
   color: #ffffff;
@@ -181,6 +228,92 @@
   font-size: 13px;
   font-weight: 500;
   border-bottom: 1px solid var(--accent-red-border);
+}
+
+/* Friendly retry toast (no error codes): sits under the controls, ticks
+   down live, dismissible, and doesn't wipe the session data behind it. */
+.ls-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 1.5rem;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  border: 1px solid;
+  animation: ls-toast-in 0.18s ease-out;
+}
+
+.ls-toast-retrying {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.ls-toast-failed {
+  background: var(--accent-red-bg);
+  border-color: var(--accent-red-border);
+  color: var(--accent-red);
+}
+
+.ls-toast-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.ls-toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ls-toast-action {
+  flex: none;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.ls-toast-action:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.ls-toast-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ls-toast-dismiss {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.ls-toast-dismiss:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+@keyframes ls-toast-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .ls-content {
