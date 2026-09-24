@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import * as XLSX from "xlsx";
 import {
   Play, Square, Clock, CheckCircle2, UserX,
-  AlertCircle, RefreshCw, Activity, Download, Users,
+  AlertCircle, AlertTriangle, RefreshCw, Activity, Download, Users,
   FileText, ChevronDown, History, Pause, Timer, X
 } from "lucide-react";
 import {
@@ -21,19 +21,110 @@ const formatClock = (value) => {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
-// One student row inside the active session view. `completed` is decided by the
-// backend, which diffs the live LeetCode snapshot against the session baseline.
-function SessionStudentRow({ student, completed }) {
+// Activity buckets sent by the backend for every student in a session:
+//   completed     -> a NEW unique problem was accepted
+//   attempted     -> an accepted submission arrived but the unique solve count
+//                    did not move, i.e. an already solved question was
+//                    submitted again (mentor must verify the improvement)
+//   not_completed -> nothing accepted during the session
+const ACTIVITY_STATUS = {
+  COMPLETED: "completed",
+  ATTEMPTED: "attempted",
+  NOT_COMPLETED: "not_completed",
+};
+
+const ACTIVITY_STATUS_LABELS = {
+  [ACTIVITY_STATUS.COMPLETED]: "Completed",
+  [ACTIVITY_STATUS.ATTEMPTED]: "Attempted (already solved)",
+  [ACTIVITY_STATUS.NOT_COMPLETED]: "Not completed",
+};
+
+// Falls back to the older completed_during_session flag for reports that were
+// stored before activity_status existed.
+const getActivityStatus = (student) => {
+  if (student?.activity_status) return student.activity_status;
+  return student?.completed_during_session
+    ? ACTIVITY_STATUS.COMPLETED
+    : ACTIVITY_STATUS.NOT_COMPLETED;
+};
+
+// Diffs two consecutive refresh payloads and returns the students who have
+// JUST re-submitted an already solved question (newly "attempted", or the
+// re-attempt count went up). Drives the transient warning toast so mentors
+// find out the moment auto-refresh picks the click up — not just by reading
+// the row later. An empty/first payload never warns (nothing to compare yet).
+const diffNewlyAttempted = (prevStudents, nextStudents) => {
+  if (!Array.isArray(prevStudents) || !Array.isArray(nextStudents)) return [];
+  const prevById = new Map(prevStudents.map((s) => [s.user_id, s]));
+  return nextStudents.filter((student) => {
+    if (getActivityStatus(student) !== ACTIVITY_STATUS.ATTEMPTED) return false;
+    const prev = prevById.get(student.user_id);
+    if (!prev) return false;
+    const prevWasAttempted =
+      getActivityStatus(prev) === ACTIVITY_STATUS.ATTEMPTED;
+    return !prevWasAttempted || (student.reattempt_count ?? 0) > (prev.reattempt_count ?? 0);
+  });
+};
+
+const formatAttemptedWarning = (students) => {
+  const name = students[0]?.name || students[0]?.leetcode_username || "A student";
+  return students.length === 1
+    ? `${name} attempted to complete an already completed question — verify the improvement before awarding credit.`
+    : `${students.length} students attempted to complete already completed questions — verify before awarding credit.`;
+};
+
+// Long enough for a mentor to read the name, short enough not to go stale.
+const ATTEMPTED_WARNING_TOAST_MS = 15000;
+
+const getSubmissionTitles = (submissions) =>
+  (Array.isArray(submissions) ? submissions : [])
+    .map((sub) => sub?.title)
+    .filter(Boolean);
+
+const formatSubmissionTitles = (submissions, max = 3) => {
+  const titles = getSubmissionTitles(submissions);
+  if (titles.length === 0) return "";
+  const visible = titles.slice(0, max).join(", ");
+  return titles.length > max ? `${visible} +${titles.length - max} more` : visible;
+};
+
+// One student row inside the active session view. The status is decided by the
+// backend, which diffs the live LeetCode snapshot against the session baseline:
+//   completed -> a new unique problem was accepted
+//   attempted -> an already solved problem was submitted again (no new solve),
+//                flagged as a warning so the mentor can verify the improvement
+function SessionStudentRow({ student, status }) {
+  const activityStatus = status || getActivityStatus(student);
+  const completed = activityStatus === ACTIVITY_STATUS.COMPLETED;
+  const attempted = activityStatus === ACTIVITY_STATUS.ATTEMPTED;
   const hasLeetcode = student.has_leetcode ?? Boolean(student.leetcode_username);
   const solvedDuringSession =
     student.solved_during_session ?? student.solved_today ?? 0;
   const newSubmissions = student.new_submissions || [];
+  const reattemptSubmissions = student.reattempt_submissions || [];
+  const solveSubmissions = Array.isArray(student.solve_submissions)
+    ? student.solve_submissions
+    : [];
+  // What to show under the student name: the problems they solved for real when
+  // they completed something, otherwise the questions they only re-submitted.
+  const headlineSubmissions = completed
+    ? (solveSubmissions.length > 0 ? solveSubmissions : newSubmissions)
+    : (newSubmissions.length > 0 ? newSubmissions : reattemptSubmissions);
+  const headlineTitles = formatSubmissionTitles(headlineSubmissions);
+  const reattemptTitles =
+    completed && reattemptSubmissions.length > 0
+      ? formatSubmissionTitles(reattemptSubmissions, 2)
+      : "";
   const lastActivity = formatClock(student.last_activity);
 
   return (
     <div
       className={`ls-student-card ${
-        completed ? "ls-student-completed" : "ls-student-not-completed"
+        completed
+          ? "ls-student-completed"
+          : attempted
+            ? "ls-student-attempted"
+            : "ls-student-not-completed"
       }`}
     >
       <div className="ls-student-avatar">
@@ -53,20 +144,26 @@ function SessionStudentRow({ student, completed }) {
             ? `@${student.leetcode_username}`
             : student.kalvium_email || student.email || "No LeetCode handle"}
         </span>
-        {newSubmissions.length > 0 && (
-          <span className="ls-student-solved-titles">
-            {newSubmissions
-              .slice(0, 3)
-              .map((sub) => sub.title)
-              .join(", ")}
-            {newSubmissions.length > 3
-              ? ` +${newSubmissions.length - 3} more`
-              : ""}
+        {headlineTitles && (
+          <span
+            className={`ls-student-solved-titles ${
+              attempted ? "ls-student-attempted-titles" : ""
+            }`}
+          >
+            {headlineTitles}
+          </span>
+        )}
+        {reattemptTitles && (
+          <span className="ls-student-attempted-titles">
+            Also re-submitted: {reattemptTitles}
           </span>
         )}
       </div>
 
-      <div className="ls-student-status">
+      <div
+        className="ls-student-status"
+        aria-label={`Status: ${ACTIVITY_STATUS_LABELS[activityStatus] || activityStatus}`}
+      >
         {!hasLeetcode ? (
           <div className="ls-student-no-leetcode">
             <AlertCircle size={16} className="ls-status-icon warning" />
@@ -76,6 +173,22 @@ function SessionStudentRow({ student, completed }) {
           <div className="ls-student-no-leetcode">
             <AlertCircle size={16} className="ls-status-icon warning" />
             <span>Could not reach LeetCode</span>
+          </div>
+        ) : attempted ? (
+          <div className="ls-student-attempted-info">
+            <span className="ls-status-line">
+              <AlertTriangle size={16} className="ls-status-icon attempted" />
+              Attempted an already solved question
+            </span>
+            <span className="ls-student-attempted-hint">
+              {student.reattempt_count > 0
+                ? `${student.reattempt_count} re-submitted · no new problem accepted`
+                : "No new problem accepted — verify before awarding credit"}
+            </span>
+            <span className="ls-student-last-activity">
+              <Clock size={12} />
+              {lastActivity ? `Last active ${lastActivity}` : "No recent activity"}
+            </span>
           </div>
         ) : completed ? (
           <div className="ls-student-completed-info">
@@ -135,19 +248,28 @@ const reviewReportToSessionPayload = (report) => {
       leetcode_username: student.leetcode_username,
       has_leetcode: student.has_leetcode,
       fetch_failed: student.fetch_failed,
+      activity_status: getActivityStatus(student),
+      activity_label: student.activity_label,
+      activity_message: student.activity_message,
+      needs_verification: Boolean(student.needs_verification),
       completed_during_session: student.completed_during_session,
       solved_during_session: student.solved_during_session,
       new_submissions_count: student.new_submissions_count,
       new_submissions: student.new_submissions || [],
+      solve_submissions: student.solve_submissions || [],
+      reattempt_count: student.reattempt_count ?? 0,
+      reattempt_submissions: student.reattempt_submissions || [],
       live_total_solved: student.live_total_solved,
       last_activity: student.last_activity,
     })),
     summary: {
       total: summary.total ?? students.length,
       completed: summary.completed ?? 0,
+      attempted: summary.attempted ?? 0,
       not_completed: summary.not_completed ?? 0,
       completionRate: summary.completionRate ?? 0,
       completedToday: summary.completed ?? 0,
+      attemptedToday: summary.attempted ?? 0,
       notCompletedToday: summary.not_completed ?? 0,
     },
   };
@@ -303,6 +425,13 @@ function ReviewReportList({ reports, expandedId, isExporting, onToggle, onDownlo
         const summary = report.summary || {};
         const total = summary.total ?? report.students?.length ?? 0;
         const completed = summary.completed ?? 0;
+        const attempted =
+          summary.attempted ??
+          (Array.isArray(report.students)
+            ? report.students.filter(
+                (student) => getActivityStatus(student) === ACTIVITY_STATUS.ATTEMPTED
+              ).length
+            : 0);
         const rate = summary.completionRate ?? 0;
 
         return (
@@ -334,7 +463,9 @@ function ReviewReportList({ reports, expandedId, isExporting, onToggle, onDownlo
               </span>
               <span className="ls-review-item-stats">
                 {report.has_detailed_report
-                  ? `${completed}/${total} completed (${rate}%)`
+                  ? `${completed}/${total} completed (${rate}%)${
+                      attempted > 0 ? ` · ${attempted} attempted` : ""
+                    }`
                   : "session info only"}
               </span>
               <ChevronDown
@@ -377,22 +508,28 @@ function ReviewReportDetail({ report, isExporting, onDownload }) {
 
   const summary = report.summary || {};
   const students = Array.isArray(report.students) ? report.students : [];
-  const completedStudents = students.filter((student) =>
-    Boolean(student.completed_during_session)
+  const completedStudents = students.filter(
+    (student) => getActivityStatus(student) === ACTIVITY_STATUS.COMPLETED
+  );
+  const attemptedStudents = students.filter(
+    (student) => getActivityStatus(student) === ACTIVITY_STATUS.ATTEMPTED
   );
   const notCompletedStudents = students.filter(
-    (student) => !Boolean(student.completed_during_session)
+    (student) => getActivityStatus(student) === ACTIVITY_STATUS.NOT_COMPLETED
   );
   const visibleStudents =
     statusFilter === "completed"
       ? completedStudents
-      : statusFilter === "not_completed"
-        ? notCompletedStudents
-        : students;
+      : statusFilter === "attempted"
+        ? attemptedStudents
+        : statusFilter === "not_completed"
+          ? notCompletedStudents
+          : students;
 
   const FILTER_OPTIONS = [
     { value: "all", label: `All (${students.length})` },
     { value: "completed", label: `Completed (${completedStudents.length})` },
+    { value: "attempted", label: `Attempted (${attemptedStudents.length})` },
     { value: "not_completed", label: `Not completed (${notCompletedStudents.length})` },
   ];
 
@@ -401,6 +538,7 @@ function ReviewReportDetail({ report, isExporting, onDownload }) {
       <div className="ls-review-summary">
         <span>Total: {summary.total ?? 0}</span>
         <span>Completed: {summary.completed ?? 0}</span>
+        <span>Attempted: {summary.attempted ?? attemptedStudents.length}</span>
         <span>Not completed: {summary.not_completed ?? 0}</span>
         <span>Completion: {summary.completionRate ?? 0}%</span>
       </div>
@@ -430,17 +568,23 @@ function ReviewReportDetail({ report, isExporting, onDownload }) {
         {visibleStudents.map((student) => (
           <SessionStudentRow
             key={student.user_id || student.name}
-            student={{ ...student, new_submissions: student.new_submissions || [] }}
-            completed={Boolean(student.completed_during_session)}
+            student={{
+              ...student,
+              new_submissions: student.new_submissions || [],
+              reattempt_submissions: student.reattempt_submissions || [],
+            }}
+            status={getActivityStatus(student)}
           />
         ))}
         {visibleStudents.length === 0 && (
           <p className="ls-review-empty">
             {statusFilter === "completed"
-              ? "No students completed a problem in this session."
-              : statusFilter === "not_completed"
-                ? "Every student completed a problem in this session."
-                : "No students in this report."}
+              ? "No students completed a new problem in this session."
+              : statusFilter === "attempted"
+                ? "No student only re-submitted an already solved question."
+                : statusFilter === "not_completed"
+                  ? "Every student solved or attempted a problem in this session."
+                  : "No students in this report."}
           </p>
         )}
       </div>
@@ -457,19 +601,46 @@ function ReviewReportDetail({ report, isExporting, onDownload }) {
   );
 }
 
-// Splits the roster into completed / not completed for the active view.
-
+// Splits the roster into completed / attempted / not completed for the active
+// view. "Attempted" students submitted an already solved question again, so
+// they are shown on their own (amber) row instead of as Completed.
 function StudentActivityGroups({ students, summary }) {
-  const completed =
+  const completedFromSummary =
     Array.isArray(summary?.completedStudents) && summary.completedStudents.length > 0
       ? summary.completedStudents
-      : students.filter((student) => student.completed_during_session);
-
-  const notCompleted =
+      : null;
+  const attemptedFromSummary =
+    Array.isArray(summary?.attemptedStudents) && summary.attemptedStudents.length > 0
+      ? summary.attemptedStudents
+      : null;
+  const notCompletedFromSummary =
     Array.isArray(summary?.notCompletedStudents) &&
     summary.notCompletedStudents.length > 0
       ? summary.notCompletedStudents
-      : students.filter((student) => !student.completed_during_session);
+      : null;
+
+  const attemptedIds = new Set(
+    (attemptedFromSummary ||
+      students.filter((student) => getActivityStatus(student) === ACTIVITY_STATUS.ATTEMPTED)
+    ).map((student) => student.user_id)
+  );
+
+  const completed = (
+    completedFromSummary ||
+    students.filter((student) => getActivityStatus(student) === ACTIVITY_STATUS.COMPLETED)
+  ).filter((student) => !attemptedIds.has(student.user_id));
+
+  const attempted = (
+    attemptedFromSummary ||
+    students.filter((student) => getActivityStatus(student) === ACTIVITY_STATUS.ATTEMPTED)
+  );
+
+  const notCompleted = (
+    notCompletedFromSummary ||
+    students.filter((student) => getActivityStatus(student) === ACTIVITY_STATUS.NOT_COMPLETED)
+  )
+    .filter((student) => !attemptedIds.has(student.user_id))
+    .filter((student) => getActivityStatus(student) === ACTIVITY_STATUS.NOT_COMPLETED);
 
   return (
     <div className="ls-student-list">
@@ -490,13 +661,42 @@ function StudentActivityGroups({ students, summary }) {
                 <SessionStudentRow
                   key={student.user_id}
                   student={student}
-                  completed
+                  status={ACTIVITY_STATUS.COMPLETED}
                 />
               ))}
             </div>
           ) : (
             <p className="ls-group-empty">
-              No student has solved a problem yet.
+              No student has solved a new problem yet.
+            </p>
+          )}
+        </div>
+
+        <div className="ls-group">
+          <div className="ls-group-header ls-group-header-attempted">
+            <AlertTriangle size={16} />
+            <span>Attempted an already solved question ({attempted.length})</span>
+          </div>
+          {attempted.length > 0 ? (
+            <>
+              <p className="ls-group-hint">
+                These students re-submitted a question they had already solved —
+                LeetCode did not register a new problem. Verify the solution was
+                actually improved before awarding credit.
+              </p>
+              <div className="ls-student-grid">
+                {attempted.map((student) => (
+                  <SessionStudentRow
+                    key={student.user_id}
+                    student={student}
+                    status={ACTIVITY_STATUS.ATTEMPTED}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="ls-group-empty">
+              No student has re-submitted an already solved question.
             </p>
           )}
         </div>
@@ -512,13 +712,13 @@ function StudentActivityGroups({ students, summary }) {
                 <SessionStudentRow
                   key={student.user_id}
                   student={student}
-                  completed={false}
+                  status={ACTIVITY_STATUS.NOT_COMPLETED}
                 />
               ))}
             </div>
           ) : (
             <p className="ls-group-empty">
-              Everyone has solved at least one problem.
+              Everyone has solved or attempted at least one problem.
             </p>
           )}
         </div>
@@ -555,11 +755,16 @@ function ActivityTimelineChart({ activityData, totalCount }) {
     totalCount || 0,
     ...points.map((p) => Number(p.completed) || 0),
     ...points.map((p) => Number(p.notCompleted) || 0),
+    ...points.map((p) => Number(p.attempted) || 0),
     1
   );
   // Round the y-axis up to a friendly step so the scale reads cleanly
   const step = maxValue <= 5 ? 1 : Math.ceil(maxValue / 5);
   const yMax = Math.ceil(maxValue / step) * step;
+
+  // Older stored reports have no "attempted" series, so only draw it when the
+  // session actually recorded a re-submit of an already solved question.
+  const hasAttempted = points.some((p) => Number(p.attempted) > 0);
 
   const toX = (index) =>
     padding.left + (index / (points.length - 1)) * plotWidth;
@@ -628,6 +833,11 @@ function ActivityTimelineChart({ activityData, totalCount }) {
         {/* Not completed line */}
         <path d={buildPath("notCompleted")} className="ls-chart-line-not-completed" />
 
+        {/* Attempted (already solved) line — only when such re-submits happened */}
+        {hasAttempted && (
+          <path d={buildPath("attempted")} className="ls-chart-line-attempted" />
+        )}
+
         {/* Data points (with hover tooltips) */}
         {points.map((p, i) => (
           <g key={i}>
@@ -647,6 +857,16 @@ function ActivityTimelineChart({ activityData, totalCount }) {
             >
               <title>{`${formatTick(p)} — ${Number(p.notCompleted) || 0} not completed`}</title>
             </circle>
+            {hasAttempted && (
+              <circle
+                cx={toX(i)}
+                cy={toY(Number(p.attempted) || 0)}
+                r="3.5"
+                className="ls-chart-dot-attempted"
+              >
+                <title>{`${formatTick(p)} — ${Number(p.attempted) || 0} attempted an already solved question`}</title>
+              </circle>
+            )}
           </g>
         ))}
 
@@ -685,6 +905,13 @@ function ActivityTimelineChart({ activityData, totalCount }) {
           <span className="ls-legend-label">Completed</span>
           <span className="ls-legend-value">{latest.completed ?? 0}</span>
         </div>
+        {hasAttempted && (
+          <div className="ls-legend-row">
+            <span className="ls-legend-dot ls-legend-dot-attempted" />
+            <span className="ls-legend-label">Attempted (already solved)</span>
+            <span className="ls-legend-value">{latest.attempted ?? 0}</span>
+          </div>
+        )}
         <div className="ls-legend-row">
           <span className="ls-legend-dot ls-legend-dot-pending" />
           <span className="ls-legend-label">Not completed</span>
@@ -730,6 +957,10 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
   const cooldownTimerRef = useRef(null);
   const isUpdatingRef = useRef(false);
   const onStudentUpdateRef = useRef(onStudentUpdate);
+  // Students from the last successful payload + timer for the "attempted an
+  // already completed question" warning toast raised on refresh diffs.
+  const prevStudentsRef = useRef(null);
+  const warningToastTimerRef = useRef(null);
 
   // History of session snapshots (completed vs not completed over time) that
   // feeds the "Activity Over Time" timeline chart
@@ -755,19 +986,28 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
         liveSession.ended_at || sessionData?.lastUpdated || new Date().toISOString(),
       total: summary.total ?? students.length,
       completed: summary.completed ?? summary.completedToday ?? 0,
+      attempted: summary.attempted ?? summary.attemptedToday ?? 0,
       notCompleted: summary.not_completed ?? summary.notCompletedToday ?? 0,
       completionRate: summary.completionRate ?? 0,
       rows: students.map((student) => {
+        const activityStatus =
+          getActivityStatus(student) === ACTIVITY_STATUS.ATTEMPTED
+            ? "Attempted an already solved question"
+            : getActivityStatus(student) === ACTIVITY_STATUS.COMPLETED
+              ? "Completed"
+              : "Not completed";
         const status = !student.has_leetcode
           ? "No LeetCode handle"
           : student.fetch_failed
             ? "LeetCode unreachable"
-            : student.completed_during_session
-              ? "Completed"
-              : "Not completed";
-        const solvedTitles = Array.isArray(student.new_submissions)
-          ? student.new_submissions.map((sub) => sub.title).filter(Boolean)
-          : [];
+            : activityStatus;
+        const solvedTitles = Array.isArray(student.solve_submissions) &&
+          student.solve_submissions.length > 0
+          ? getSubmissionTitles(student.solve_submissions)
+          : getSubmissionTitles(student.new_submissions);
+        // Questions the student only re-submitted: no new problem was accepted,
+        // so the mentor has to verify the improvement themselves.
+        const reattemptTitles = getSubmissionTitles(student.reattempt_submissions);
 
         return {
           Name: student.name || "Unnamed Student",
@@ -777,6 +1017,7 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
           "Solved During Session": student.solved_during_session ?? 0,
           "New Submissions": student.new_submissions_count ?? 0,
           "Solved Titles": solvedTitles.join("; "),
+          "Re-attempted Titles": reattemptTitles.join("; "),
           "Total Solved": student.live_total_solved ?? student.total_solved ?? 0,
           "Last Activity": student.last_activity
             ? new Date(student.last_activity).toLocaleString()
@@ -800,8 +1041,9 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
       // Sheet 1: every student and what they did during the session
       const detailSheet = XLSX.utils.json_to_sheet(report.rows);
       detailSheet["!cols"] = [
-        { wch: 24 }, { wch: 20 }, { wch: 10 }, { wch: 20 },
-        { wch: 22 }, { wch: 16 }, { wch: 60 }, { wch: 14 }, { wch: 22 },
+        { wch: 24 }, { wch: 20 }, { wch: 10 }, { wch: 36 },
+        { wch: 22 }, { wch: 16 }, { wch: 60 }, { wch: 60 },
+        { wch: 14 }, { wch: 22 },
       ];
       XLSX.utils.book_append_sheet(workbook, detailSheet, "Session Details");
 
@@ -813,6 +1055,10 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
         ["Session Ended", report.endedAt ? new Date(report.endedAt).toLocaleString() : "-"],
         ["Total Students", report.total],
         ["Completed", report.completed],
+        [
+          "Attempted (already solved question - verify)",
+          report.attempted,
+        ],
         ["Not Completed", report.notCompleted],
         ["Completion Rate (%)", report.completionRate],
       ];
@@ -845,10 +1091,35 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
 
   const applySessionUpdate = useCallback((update) => {
     if (update && update.active) {
+      // Warn immediately when this refresh reveals a student re-submitting a
+      // question they had already completed (mentor must verify the improvement).
+      const newlyAttempted = diffNewlyAttempted(
+        prevStudentsRef.current,
+        update.students
+      );
+      prevStudentsRef.current = Array.isArray(update.students)
+        ? update.students
+        : [];
       setSession(update);
       setLastUpdated(new Date());
       setError(null);
-      setToast(null);
+      if (warningToastTimerRef.current) {
+        clearTimeout(warningToastTimerRef.current);
+        warningToastTimerRef.current = null;
+      }
+      if (newlyAttempted.length > 0) {
+        setToast({
+          status: "warning",
+          title: "Attempted an already completed question",
+          message: formatAttemptedWarning(newlyAttempted),
+        });
+        warningToastTimerRef.current = setTimeout(() => {
+          warningToastTimerRef.current = null;
+          setToast((prev) => (prev?.status === "warning" ? null : prev));
+        }, ATTEMPTED_WARNING_TOAST_MS);
+      } else {
+        setToast(null);
+      }
       setRetryCount(0);
       setActivityData((prev) => [
         ...prev.slice(-20),
@@ -856,6 +1127,8 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
           time: new Date(),
           completed:
             update.summary?.completedToday ?? update.summary?.completed ?? 0,
+          attempted:
+            update.summary?.attemptedToday ?? update.summary?.attempted ?? 0,
           notCompleted:
             update.summary?.notCompletedToday ?? update.summary?.not_completed ?? 0,
         },
@@ -874,6 +1147,7 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
       return { ok: false, retryable: false };
     }
     // Session ended server-side: drop the live view, no retry.
+    prevStudentsRef.current = null;
     setSession({ active: false, session: null, students: [] });
     return { ok: false, retryable: false, ended: true };
   }, []);
@@ -953,6 +1227,10 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
 
   const dismissToast = useCallback(() => {
     clearToastTimer();
+    if (warningToastTimerRef.current) {
+      clearTimeout(warningToastTimerRef.current);
+      warningToastTimerRef.current = null;
+    }
     setToast(null);
   }, [clearToastTimer]);
 
@@ -1065,6 +1343,11 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
         const sessionData = await getLeetcodeSession();
         if (isMounted) {
           setSession(sessionData);
+          // Seed the refresh-diff baseline so the first auto-refresh can tell
+          // a NEW re-submit apart from state that already existed on load.
+          prevStudentsRef.current = sessionData.active
+            ? (sessionData.students || [])
+            : null;
           if (sessionData.active && sessionData.session) {
             setLastUpdated(new Date());
             // Seed the timeline chart with the current snapshot so mentors who
@@ -1075,6 +1358,10 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
                 completed:
                   sessionData.summary?.completedToday ??
                   sessionData.summary?.completed ??
+                  0,
+                attempted:
+                  sessionData.summary?.attemptedToday ??
+                  sessionData.summary?.attempted ??
                   0,
                 notCompleted:
                   sessionData.summary?.notCompletedToday ??
@@ -1139,6 +1426,10 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
         clearInterval(cooldownTimerRef.current);
         cooldownTimerRef.current = null;
       }
+      if (warningToastTimerRef.current) {
+        clearTimeout(warningToastTimerRef.current);
+        warningToastTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -1184,13 +1475,15 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
       if (result && result.success) {
         // The start route returns the full live payload (session + students +
         // summary), so use it directly instead of the stale prop list.
+        const startStudents = result.students || assignedStudents || [];
         setSession({
           active: true,
           session: result.session,
-          students: result.students || assignedStudents || [],
+          students: startStudents,
           summary: result.summary || null,
           lastUpdated: result.lastUpdated || new Date().toISOString(),
         });
+        prevStudentsRef.current = startStudents;
         setLastUpdated(new Date());
         // Auto-refresh ON by default: (re)arm 45s countdown (ticker picks it up)
         setAutoRefreshEnabled(true);
@@ -1201,6 +1494,7 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
           {
             time: new Date(),
             completed: result.summary?.completedToday || 0,
+            attempted: result.summary?.attemptedToday || 0,
             notCompleted: result.summary?.notCompletedToday || 0
           }
         ]);
@@ -1229,6 +1523,7 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
         // Fall back to the pre-end snapshot if session state was empty
         setLastReport((prev) => prev || buildSessionReport(session));
         setSession({ active: false, session: null, students: [] });
+        prevStudentsRef.current = null;
         setActivityData([]);
         setSecondsUntilRefresh(AUTO_REFRESH_SECONDS);
         // Ending clears all transient refresh UX
@@ -1273,6 +1568,9 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
   const hasStudents = session.students && session.students.length > 0;
   const summary = session.summary;
   const completedCount = summary?.completed ?? summary?.completedToday ?? 0;
+  // Students who only re-submitted an already solved question: never counted as
+  // completed, so mentors can verify the improvement themselves.
+  const attemptedCount = summary?.attempted ?? summary?.attemptedToday ?? 0;
   const notCompletedCount = summary?.not_completed ?? summary?.notCompletedToday ?? 0;
   const totalCount = summary?.total ?? session.students?.length ?? 0;
   const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
@@ -1368,22 +1666,28 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
         )}
       </div>
 
-      {/* Friendly retry toast — no error codes, live countdown, dismissible */}
+      {/* Transient toast — retry countdown / failure / re-submit warning */}
       {toast && (
         <div
           className={`ls-toast ls-toast-${toast.status}`}
-          role={toast.status === "failed" ? "alert" : "status"}
+          role={toast.status === "retrying" ? "status" : "alert"}
           aria-live="polite"
         >
           <span className="ls-toast-icon">
             {toast.status === "retrying" ? (
               <RefreshCw size={16} className="spin" />
+            ) : toast.status === "warning" ? (
+              <AlertTriangle size={16} />
             ) : (
               <AlertCircle size={16} />
             )}
           </span>
           <span className="ls-toast-text">
-            <strong>Refresh failed{toast.status === "retrying" ? `: retrying in ${toast.secondsLeft ?? 0}s` : ""}</strong>
+            <strong>
+              {toast.status === "retrying"
+                ? `Refresh failed: retrying in ${toast.secondsLeft ?? 0}s`
+                : toast.title || "Refresh failed"}
+            </strong>
             <span>
               {toast.status === "retrying"
                 ? `Attempt ${toast.attempt} of ${MAX_AUTO_RETRIES} — your data is safe.`
@@ -1443,6 +1747,17 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
                   <span className="ls-summary-label">Completed Today</span>
                 </span>
               </div>
+              {attemptedCount > 0 && (
+                <div className="ls-summary-card ls-summary-attempted">
+                  <span className="ls-summary-icon">
+                    <AlertTriangle size={18} />
+                  </span>
+                  <span className="ls-summary-text">
+                    <span className="ls-summary-value">{attemptedCount}</span>
+                    <span className="ls-summary-label">Attempted (already solved)</span>
+                  </span>
+                </div>
+              )}
               <div className="ls-summary-card ls-summary-not-completed">
                 <span className="ls-summary-icon">
                   <UserX size={18} />
@@ -1483,6 +1798,13 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
                     <span className="ls-legend-label">Completed</span>
                     <span className="ls-legend-value">{completedCount}</span>
                   </div>
+                  {attemptedCount > 0 && (
+                    <div className="ls-legend-row">
+                      <span className="ls-legend-dot ls-legend-dot-attempted" />
+                      <span className="ls-legend-label">Attempted (already solved)</span>
+                      <span className="ls-legend-value">{attemptedCount}</span>
+                    </div>
+                  )}
                   <div className="ls-legend-row">
                     <span className="ls-legend-dot ls-legend-dot-pending" />
                     <span className="ls-legend-label">Not completed</span>
@@ -1539,6 +1861,8 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
                 <p className="ls-report-meta">
                   Last session: {lastReport.total} students, {lastReport.completed} completed
                   ({lastReport.completionRate}%).
+                  {lastReport.attempted > 0 &&
+                    ` ${lastReport.attempted} attempted an already solved question.`}
                 </p>
                 <button
                   className="ls-btn ls-btn-download"
