@@ -892,10 +892,44 @@ const LEETCODE_FETCH_TIMEOUT_MS = 8000;
 // mentors poll inside the same 45 second window
 const liveStatsCache = new Map();
 
-// sessionId -> { startedAt, users: { [userId]: { totalSolved, submissionIds } } }
+// sessionId -> { startedAt, users: { [userId]: { totalSolved, submissionIds, solvedSlugs } } }
 // Baseline captured at session start; only meaningful while the session lives,
 // so it is kept in memory rather than in the database.
 const sessionBaselines = new Map();
+
+// Activity buckets a mentor sees for every student inside a live session.
+//   completed     -> at least one NEW unique problem was accepted
+//   attempted     -> accepted submission(s) arrived, but the student's unique
+//                    solved count did not move, i.e. they re-submitted a
+//                    problem they had already solved before the session
+//   not_completed -> nothing accepted during the session
+// These three buckets are mutually exclusive, so they always add up to total.
+const ACTIVITY_STATUS = {
+  COMPLETED: "completed",
+  ATTEMPTED: "attempted",
+  NOT_COMPLETED: "not_completed",
+};
+
+const ACTIVITY_STATUS_LABELS = {
+  [ACTIVITY_STATUS.COMPLETED]: "Completed",
+  [ACTIVITY_STATUS.ATTEMPTED]: "Attempted (already solved)",
+  [ACTIVITY_STATUS.NOT_COMPLETED]: "Not completed",
+};
+
+// Surfaced to mentors whenever a student only re-submitted already solved
+// problems, so they can verify a real improvement instead of trusting a click.
+const ATTEMPTED_ACTIVITY_MESSAGE =
+  "Re-submitted a question they had already solved - LeetCode unique solve count did not increase. Verify the improvement before awarding credit.";
+
+// Single source of truth for "what did this student do during the session?"
+const getStudentActivityStatus = (student) => {
+  if (student?.activity_status) return student.activity_status;
+
+  // Fallback for payloads created before activity_status existed
+  return student?.completed_during_session
+    ? ACTIVITY_STATUS.COMPLETED
+    : ACTIVITY_STATUS.NOT_COMPLETED;
+};
 
 // Accepts either a bare handle or a full profile URL
 const extractLeetcodeHandle = (value) => {
@@ -1411,6 +1445,7 @@ function buildSessionReportSnapshot(session, students = []) {
     summary: {
       total: summary.total,
       completed: summary.completed,
+      attempted: summary.attempted ?? 0,
       not_completed: summary.not_completed,
       completionRate: summary.completionRate,
     },
@@ -1423,6 +1458,12 @@ function buildSessionReportSnapshot(session, students = []) {
       leetcode_username: student.leetcode_username || null,
       has_leetcode: Boolean(student.has_leetcode),
       fetch_failed: Boolean(student.fetch_failed),
+      activity_status: getStudentActivityStatus(student),
+      activity_label:
+        student.activity_label ||
+        ACTIVITY_STATUS_LABELS[getStudentActivityStatus(student)],
+      activity_message: student.activity_message || null,
+      needs_verification: Boolean(student.needs_verification),
       completed_during_session: Boolean(student.completed_during_session),
       solved_during_session: student.solved_during_session ?? 0,
       new_submissions_count: student.new_submissions_count ?? 0,
@@ -1431,6 +1472,16 @@ function buildSessionReportSnapshot(session, students = []) {
         title: sub.title || "",
         titleSlug: sub.titleSlug || "",
         timestamp: Number(sub.timestamp) || 0,
+      })),
+      // Accepted submissions that did not increase the unique solve count:
+      // the student re-submitted a question they had already solved.
+      reattempt_count: student.reattempt_count ?? 0,
+      reattempt_submissions: (student.reattempt_submissions || []).map((sub) => ({
+        id: String(sub.id),
+        title: sub.title || "",
+        titleSlug: sub.titleSlug || "",
+        timestamp: Number(sub.timestamp) || 0,
+        was_already_solved: Boolean(sub.was_already_solved),
       })),
       live_total_solved:
         student.live_total_solved ?? student.db_total_solved ?? 0,
@@ -1491,6 +1542,13 @@ function setSessionBaseline(session, students = []) {
         : (student.db_total_solved ?? 0),
       stale: !liveOk,
       submissionIds: (student.recent_submissions || []).map((sub) => sub.id),
+      // Problems already accepted before the session started. Lets the diff
+      // tell a genuine new solve apart from a "submit again" on an old solve.
+      solvedSlugs: new Set(
+        (student.recent_submissions || [])
+          .map((sub) => sub.titleSlug)
+          .filter(Boolean)
+      ),
     };
   });
 
@@ -1506,6 +1564,11 @@ function setSessionBaseline(session, students = []) {
 // baseline (captured from a successful fetch at session start) and a fresh
 // live fetch now. Anything "unknown" stays not-completed rather than
 // guessing — this is what stops the "5 finished at second 0" phantom.
+//
+// Re-submitting an already solved problem is NOT a completion: LeetCode gives
+// that submission a brand new id, so it shows up as "new", but the student's
+// unique solved counter never moves. Those submissions are reported as
+// "attempted" (with a warning for the mentor) instead of "completed".
 function withSessionActivity(students = [], session) {
   const baseline = sessionBaselines.get(String(session?.id)) || null;
   const startedAtMs = session?.started_at ? new Date(session.started_at).getTime() : 0;
@@ -1523,6 +1586,10 @@ function withSessionActivity(students = [], session) {
 
     const knownIds = new Set(base?.submissionIds || []);
 
+    // Problems the student was already credited for before the session began
+    const knownSlugs =
+      base?.solvedSlugs instanceof Set ? base.solvedSlugs : new Set();
+
     // Only trust new-submission ids when the baseline actually contained a
     // submission list (full fetch). Fast-mode baselines have [] ids, and
     // comparing a full list against [] would flag EVERYTHING as new — the
@@ -1537,7 +1604,43 @@ function withSessionActivity(students = [], session) {
       ? Math.max(student.live_total_solved - baseTotalSolved, 0)
       : 0;
 
-    const completed = solvedDuringSession > 0 || newSubmissions.length > 0;
+    // The unique-solve delta is the authority: it only grows when a problem the
+    // student had never solved before is accepted. Any extra accepted
+    // submission beyond that delta is a re-attempt of an already solved
+    // problem, so it must never be reported as "Completed".
+    const sortedNewSubmissions = [...newSubmissions].sort(
+      (a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0)
+    );
+
+    let reattemptBudget = Math.max(
+      sortedNewSubmissions.length - solvedDuringSession,
+      0
+    );
+
+    const reattemptSubmissions = [];
+    const solveSubmissions = [];
+
+    sortedNewSubmissions.forEach((submission) => {
+      const alreadySolvedBeforeSession =
+        Boolean(submission.titleSlug) && knownSlugs.has(submission.titleSlug);
+
+      if (alreadySolvedBeforeSession || reattemptBudget > 0) {
+        reattemptSubmissions.push({ ...submission, was_already_solved: alreadySolvedBeforeSession });
+        if (reattemptBudget > 0) reattemptBudget -= 1;
+        return;
+      }
+
+      solveSubmissions.push(submission);
+    });
+
+    const completed = solvedDuringSession > 0 || solveSubmissions.length > 0;
+    const attemptedOnly = !completed && newSubmissions.length > 0;
+
+    const activityStatus = completed
+      ? ACTIVITY_STATUS.COMPLETED
+      : attemptedOnly
+        ? ACTIVITY_STATUS.ATTEMPTED
+        : ACTIVITY_STATUS.NOT_COMPLETED;
 
     return {
       ...student,
@@ -1546,6 +1649,17 @@ function withSessionActivity(students = [], session) {
       solved_during_session: solvedDuringSession,
       new_submissions: newSubmissions,
       new_submissions_count: newSubmissions.length,
+      // Problems genuinely solved for the first time during the session
+      solve_submissions: solveSubmissions,
+      solve_submissions_count: solveSubmissions.length,
+      // Accepted submissions that did not move the unique solve counter
+      reattempt_submissions: reattemptSubmissions,
+      reattempt_count: reattemptSubmissions.length,
+      reattempt_during_session: reattemptSubmissions.length > 0,
+      activity_status: activityStatus,
+      activity_label: ACTIVITY_STATUS_LABELS[activityStatus],
+      activity_message: attemptedOnly ? ATTEMPTED_ACTIVITY_MESSAGE : null,
+      needs_verification: attemptedOnly,
       completed_during_session: completed,
       completed_today: completed,
       // Kept as an alias so existing UI code keeps working
@@ -1554,10 +1668,19 @@ function withSessionActivity(students = [], session) {
   });
 }
 
-// Payload a mentor sees while a session is active
+// Payload a mentor sees while a session is active.
+// "Attempted" students are kept out of Completed (nothing new was solved) and
+// are surfaced separately so mentors can verify a re-submit of an old problem.
 function buildSessionSummary(students = []) {
-  const completed = students.filter((student) => student.completed_during_session);
-  const pending = students.filter((student) => !student.completed_during_session);
+  const completed = students.filter(
+    (student) => getStudentActivityStatus(student) === ACTIVITY_STATUS.COMPLETED
+  );
+  const attempted = students.filter(
+    (student) => getStudentActivityStatus(student) === ACTIVITY_STATUS.ATTEMPTED
+  );
+  const pending = students.filter(
+    (student) => getStudentActivityStatus(student) === ACTIVITY_STATUS.NOT_COMPLETED
+  );
 
   const toSummaryEntry = (student) => ({
     user_id: student.user_id,
@@ -1567,11 +1690,22 @@ function buildSessionSummary(students = []) {
     squad_id: student.squad_id,
     leetcode_username: student.leetcode_username,
     has_leetcode: student.has_leetcode,
+    activity_status: getStudentActivityStatus(student),
+    activity_label:
+      student.activity_label ||
+      ACTIVITY_STATUS_LABELS[getStudentActivityStatus(student)],
+    activity_message: student.activity_message || null,
+    needs_verification: Boolean(student.needs_verification),
     total_solved: student.live_total_solved ?? student.db_total_solved ?? 0,
     base_total_solved: student.base_total_solved,
     solved_during_session: student.solved_during_session,
     new_submissions_count: student.new_submissions_count,
     new_submissions: student.new_submissions,
+    // Problems accepted during the session that did NOT increase the unique
+    // solve count, i.e. the student submitted an already solved question again.
+    reattempt_count: student.reattempt_count ?? 0,
+    reattempt_submissions: student.reattempt_submissions || [],
+    solve_submissions: student.solve_submissions || [],
     last_activity: student.last_activity,
     fetch_failed: student.fetch_failed,
   });
@@ -1579,14 +1713,17 @@ function buildSessionSummary(students = []) {
   return {
     total: students.length,
     completed: completed.length,
+    attempted: attempted.length,
     not_completed: pending.length,
     completionRate: students.length
       ? Math.round((completed.length / students.length) * 100)
       : 0,
     completedStudents: completed.map(toSummaryEntry),
+    attemptedStudents: attempted.map(toSummaryEntry),
     notCompletedStudents: pending.map(toSummaryEntry),
     // Aliases kept so the existing panel UI keeps working
     completedToday: completed.length,
+    attemptedToday: attempted.length,
     notCompletedToday: pending.length,
   };
 }

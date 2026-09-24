@@ -256,6 +256,14 @@
   color: var(--accent-red);
 }
 
+/* A student re-submitted an already completed question — stands out from the
+   retry toasts so the mentor notices it during the auto-refresh cycle. */
+.ls-toast-warning {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
 .ls-toast-icon {
   display: inline-flex;
   flex: none;
@@ -322,7 +330,9 @@
 
 .ls-summary-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* auto-fit keeps the 3-card layout unchanged and lets the "Attempted" card
+     slot in as a 4th column when a session has re-submitted questions. */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -1280,6 +1290,86 @@
   margin-top: 10px;
 }
 
+/* ==========================================
+   ATTEMPTED (RE-SUBMITTED AN ALREADY SOLVED QUESTION)
+   A student clicked Submit on a problem they had already solved, so the
+   unique solve counter did not move. Shown as a warning instead of Completed.
+   ========================================== */
+
+.ls-student-attempted {
+  border-left: 3px solid var(--accent-amber);
+  background: var(--accent-amber-bg);
+}
+
+.ls-student-attempted-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 12px;
+  text-align: right;
+}
+
+.ls-student-attempted-info span:first-child {
+  color: var(--accent-amber-text);
+  font-weight: 600;
+}
+
+.ls-student-attempted-hint {
+  max-width: 250px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--accent-amber-text);
+}
+
+.ls-status-icon.attempted {
+  color: var(--accent-amber);
+}
+
+.ls-student-solved-titles.ls-student-attempted-titles {
+  color: var(--accent-amber-text);
+}
+
+.ls-group-header-attempted {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+  border: 1px solid var(--accent-amber-border);
+}
+
+.ls-group-hint {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--accent-amber-text);
+  background: var(--accent-amber-bg);
+  border: 1px dashed var(--accent-amber-border);
+  border-radius: var(--radius-sm);
+}
+
+.ls-summary-card.ls-summary-attempted .ls-summary-icon {
+  color: var(--accent-amber);
+  background: rgba(217, 119, 6, 0.12);
+}
+
+.ls-chart-line-attempted {
+  fill: none;
+  stroke: #d97706;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ls-chart-dot-attempted {
+  fill: #d97706;
+  stroke: #ffffff;
+  stroke-width: 1.5;
+}
+
+.ls-legend-dot-attempted {
+  background: #d97706;
+}
+
 /* Responsive */
 
 /* Responsive */
@@ -1290,6 +1380,15 @@
 
   .ls-student-grid {
     grid-template-columns: 1fr;
+  }
+
+  .ls-student-attempted-info {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .ls-student-attempted-hint {
+    max-width: 100%;
   }
 
   .ls-header {
