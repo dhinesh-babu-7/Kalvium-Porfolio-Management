@@ -4,6 +4,8 @@ import "./LoginPage.css";
 import GoogleIcon from "../assets/icons8-google.svg";
 import KalviumLogo from "../assets/kalvium-logo.svg";
 import { supabase } from "../lib/supabase.js";
+import { getUserRole } from "../hooks/useAuthStatus.js";
+import { MENTOR_HOME, STUDENT_HOME } from "../components/AuthGate.jsx";
 
 export default function LoginPage() {
     const [errorMessage, setErrorMessage] = useState("");
@@ -35,7 +37,12 @@ export default function LoginPage() {
                         window.location.pathname
                     );
 
-                    navigate("/dashboard", { replace: true });
+                    // Land each role in its own dashboard home
+                    const role = getUserRole(session.user);
+                    navigate(
+                        role === "mentor" ? MENTOR_HOME : role === "student" ? STUDENT_HOME : "/dashboard",
+                        { replace: true }
+                    );
                     return;
                 }
             }

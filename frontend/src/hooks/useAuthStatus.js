@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-export function useAuthStatus() {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+/**
+ * Single source of truth for the authenticated user's role.
+ * Reads from user_metadata.role first, then app_metadata.role.
+ */
+export function getUserRole(user) {
+    return user?.user_metadata?.role ?? user?.app_metadata?.role ?? null;
+}
+
+export function useUserRole() {
+    const [user, setUser] = useState(null);
+    const [role, setRole] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -14,7 +23,9 @@ export function useAuthStatus() {
             } = await supabase.auth.getSession();
 
             if (isMounted) {
-                setIsAuthenticated(Boolean(session?.user));
+                const nextUser = session?.user ?? null;
+                setUser(nextUser);
+                setRole(getUserRole(nextUser));
                 setLoading(false);
             }
         };
@@ -25,7 +36,9 @@ export function useAuthStatus() {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event, session) => {
             if (isMounted) {
-                setIsAuthenticated(Boolean(session?.user));
+                const nextUser = session?.user ?? null;
+                setUser(nextUser);
+                setRole(getUserRole(nextUser));
                 setLoading(false);
             }
         });
@@ -36,5 +49,12 @@ export function useAuthStatus() {
         };
     }, []);
 
+    return { user, role, isAuthenticated: Boolean(user), loading };
+}
+
+// Backwards-compatible shim: existing Navbar/Hero/CTA only need the boolean.
+export function useAuthStatus() {
+    const { isAuthenticated, loading } = useUserRole();
     return { isAuthenticated, loading };
 }
+

@@ -1,14 +1,17 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import "./Navbar.css";
 import { ArrowRight, Menu, X } from "lucide-react";
 import logo from "../assets/kalvium-logo.svg";
-import { useAuthStatus } from "../hooks/useAuthStatus";
+import { useUserRole } from "../hooks/useAuthStatus";
+import { MENTOR_HOME, STUDENT_HOME } from "./AuthGate";
 
 function Navbar() {
     const navigate = useNavigate();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const { isAuthenticated, loading } = useAuthStatus();
+    const { isAuthenticated, role, loading } = useUserRole();
+
+    const dashboardHome = role === "mentor" ? MENTOR_HOME : STUDENT_HOME;
 
     const toggleMenu = () => {
         setIsMenuOpen((prev) => !prev);
@@ -25,7 +28,7 @@ function Navbar() {
         if (loading) return;
 
         if (isAuthenticated) {
-            navigate("/dashboard");
+            navigate(dashboardHome);
         } else {
             navigate("/login");
         }

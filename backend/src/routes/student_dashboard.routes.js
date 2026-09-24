@@ -63,10 +63,22 @@ const requireAuth = async (req, res, next) => {
     }
 };
 
+// Role guard: student-only routes reject mentors (and role-less accounts)
+// with 403. Mirrors the frontend AuthGate allowedRoles check.
+const requireRole = (...allowedRoles) => (req, res, next) => {
+    const role = req.user?.user_metadata?.role ?? req.user?.app_metadata?.role ?? null;
+    if (!role || !allowedRoles.includes(role)) {
+        return res.status(403).json({ error: "Forbidden: insufficient role" });
+    }
+    next();
+};
+
+const requireStudent = requireRole("student");
+
 // ==========================================
 // 1. GET Student Profile
 // ==========================================
-router.get("/profile", authRouteLimiter, requireAuth, async (req, res) => {
+router.get("/profile", authRouteLimiter, requireAuth, requireStudent, async (req, res) => {
     try {
         const { data, error } = await req.authedSupabase
             .from("profiles")
@@ -89,7 +101,7 @@ router.get("/profile", authRouteLimiter, requireAuth, async (req, res) => {
 // ==========================================
 // 2. PUT / UPDATE Student Profile
 // ==========================================
-router.put("/updateprofile", authRouteLimiter, requireAuth, async (req, res) => {
+router.put("/updateprofile", authRouteLimiter, requireAuth, requireStudent, async (req, res) => {
     try {
         const updatePayload = req.body;
         if (!updatePayload || Object.keys(updatePayload).length === 0) {
@@ -166,7 +178,7 @@ router.put("/updateprofile", authRouteLimiter, requireAuth, async (req, res) => 
 // ==========================================
 // 3. POST GitHub Profile Stats
 // ==========================================
-router.post("/github", statsRouteLimiter, requireAuth, async (req, res) => {
+router.post("/github", statsRouteLimiter, requireAuth, requireStudent, async (req, res) => {
     const { url } = req.body;
     const username = extractUsername(url, "github");
 
@@ -202,7 +214,7 @@ router.post("/github", statsRouteLimiter, requireAuth, async (req, res) => {
 // ==========================================
 // 4. POST LeetCode Profile Stats (Official GraphQL API)
 // ==========================================
-router.post("/leetcode", statsRouteLimiter, requireAuth, async (req, res) => {
+router.post("/leetcode", statsRouteLimiter, requireAuth, requireStudent, async (req, res) => {
     const { url } = req.body;
     const username = extractUsername(url, "leetcode");
 
@@ -308,7 +320,7 @@ router.post("/leetcode", statsRouteLimiter, requireAuth, async (req, res) => {
 // ==========================================
 // 6. GET Projects from project_details table
 // ==========================================
-router.get("/projects", authRouteLimiter, requireAuth, async (req, res) => {
+router.get("/projects", authRouteLimiter, requireAuth, requireStudent, async (req, res) => {
     try {
         const userId = req.user.id;
 
@@ -333,7 +345,7 @@ router.get("/projects", authRouteLimiter, requireAuth, async (req, res) => {
 // ==========================================
 // 7. POST Add a new project
 // ==========================================
-router.post("/projects", authRouteLimiter, requireAuth, async (req, res) => {
+router.post("/projects", authRouteLimiter, requireAuth, requireStudent, async (req, res) => {
     try {
         const { name, description, githubUrl, team } = req.body;
 
@@ -376,7 +388,7 @@ router.post("/projects", authRouteLimiter, requireAuth, async (req, res) => {
 // ==========================================
 // 8. DELETE a project
 // ==========================================
-router.delete("/projects/:id", authRouteLimiter, requireAuth, async (req, res) => {
+router.delete("/projects/:id", authRouteLimiter, requireAuth, requireStudent, async (req, res) => {
     try {
         const projectId = req.params.id;
         const userId = req.user.id;
@@ -418,7 +430,7 @@ router.delete("/projects/:id", authRouteLimiter, requireAuth, async (req, res) =
 // ==========================================
 // 9. GET Achievements from achievements table
 // ==========================================
-router.get("/achievements", authRouteLimiter, requireAuth, async (req, res) => {
+router.get("/achievements", authRouteLimiter, requireAuth, requireStudent, async (req, res) => {
     try {
         const userId = req.user.id;
 
@@ -443,7 +455,7 @@ router.get("/achievements", authRouteLimiter, requireAuth, async (req, res) => {
 // ==========================================
 // 10. POST Add a new achievement
 // ==========================================
-router.post("/achievements", authRouteLimiter, requireAuth, async (req, res) => {
+router.post("/achievements", authRouteLimiter, requireAuth, requireStudent, async (req, res) => {
     try {
         const { title, description, category, icon, externalUrl } = req.body;
 
@@ -483,7 +495,7 @@ router.post("/achievements", authRouteLimiter, requireAuth, async (req, res) => 
 // ==========================================
 // 11. DELETE an achievement
 // ==========================================
-router.delete("/achievements/:id", authRouteLimiter, requireAuth, async (req, res) => {
+router.delete("/achievements/:id", authRouteLimiter, requireAuth, requireStudent, async (req, res) => {
     try {
         const achievementId = req.params.id;
         const userId = req.user.id;

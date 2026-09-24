@@ -1,6 +1,7 @@
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { ExternalLink, ArrowLeft, LoaderCircle } from "lucide-react";
+import "../components/EmptyState.css";
 import {
   getStudentProjectById,
   getStudentProjects,
@@ -91,16 +92,36 @@ export default function StudentProjectDetails() {
 
   if (error || !project) {
     return (
-      <div className="error-container" style={{ textAlign: "center", padding: "80px 20px" }}>
-        <h2>{error || "Project not found"}</h2>
-        <button
-          onClick={() => navigate(-1)}
-          className="action-btn secondary-btn"
-          style={{ marginTop: "20px", display: "inline-flex" }}
-        >
-          Go Back
-        </button>
-      </div>
+      <main className="empty-state">
+        <section className="empty-state__card">
+          <h1 className="empty-state__title">Project not found</h1>
+
+          <p className="empty-state__body">
+            We couldn’t load this project. It may have been removed, or the link
+            you followed may be out of date.
+          </p>
+
+          {error && (
+            <p className="empty-state__path">
+              Details: <code>{error}</code>
+            </p>
+          )}
+
+          <div className="empty-state__actions">
+            <button
+              type="button"
+              className="empty-state__btn empty-state__btn--primary"
+              onClick={() => navigate(-1)}
+            >
+              <ArrowLeft size={18} aria-hidden="true" />
+              Go back
+            </button>
+            <Link className="empty-state__btn empty-state__btn--ghost" to="/students">
+              Browse portfolios
+            </Link>
+          </div>
+        </section>
+      </main>
     );
   }
 

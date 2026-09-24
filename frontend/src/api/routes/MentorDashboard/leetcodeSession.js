@@ -58,7 +58,20 @@ export async function getLeetcodeSessionReports(scope = "last5") {
     }
 }
 
-export async function updateLeetcodeSession() {
+export function isRateLimitedError(error) {
+    return error?.response?.status === 429;
+}
+
+function getRetryAfterSeconds(error, fallbackSeconds) {
+    const headerValue =
+        error?.response?.headers?.["retry-after"] ??
+        error?.response?.headers?.["Retry-After"];
+    const parsed = Number(headerValue);
+    if (Number.isFinite(parsed) && parsed > 0) return Math.ceil(parsed);
+    return fallbackSeconds;
+}
+
+export async function updateLeetcodeSession({ retryAfterSeconds = 45 } = {}) {
     const token = await jwt();
     if (token === null) return { active: false, message: "No active session" };
     try {
@@ -68,9 +81,22 @@ export async function updateLeetcodeSession() {
         return response.data;
     } catch (error) {
         console.error("Error updating session:", error);
-        if (error.response && error.response.status === 429) {
-            return { active: false, message: "Rate limited: Please wait 30 seconds" };
+        if (isRateLimitedError(error)) {
+            return {
+                active: false,
+                message: "Refresh throttled by server — retrying automatically",
+                rateLimited: true,
+                retryable: true,
+                retryAfterSeconds: getRetryAfterSeconds(error, retryAfterSeconds),
+            };
         }
-        return { active: false, message: "Failed to update session" };
+        const status = error?.response?.status;
+        const retryable = status === undefined || status === 0 || (status >= 500 && status < 600);
+        return {
+            active: false,
+            message: "Failed to update session",
+            retryable,
+            retryAfterSeconds: retryAfterSeconds,
+        };
     }
 }

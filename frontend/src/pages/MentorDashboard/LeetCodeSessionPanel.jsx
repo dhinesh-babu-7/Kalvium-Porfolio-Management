@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import * as XLSX from "xlsx";
 import {
   Play, Square, Clock, CheckCircle2, UserX,
   AlertCircle, RefreshCw, Activity, Download, Users,
-  FileText, ChevronDown, History
+  FileText, ChevronDown, History, Pause, Timer, X
 } from "lucide-react";
 import {
   getLeetcodeSession,
@@ -545,7 +545,7 @@ function ActivityTimelineChart({ activityData, totalCount }) {
         <Activity size={28} />
         <p>
           Collecting activity data… the chart appears after the first auto-refresh
-          (every 30s) or when you press Refresh.
+          (every 45s) or when you press Refresh.
         </p>
       </div>
     );
@@ -699,12 +699,37 @@ function ActivityTimelineChart({ activityData, totalCount }) {
 }
 
 export default function LeetCodeSessionPanel({ squads, assignedStudents, onStudentUpdate }) {
+  const AUTO_REFRESH_SECONDS = 45;
+  const MAX_AUTO_RETRIES = 3;
+  const RETRY_DELAY_SECONDS = 10;
+  const MANUAL_COOLDOWN_SECONDS = 5;
+
   const [session, setSession] = useState(null);
   const [isStarting, setIsStarting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [pollingInterval, setPollingInterval] = useState(null);
+
+  // Auto-refresh is ON by default while a session is active. Mentors can
+  // pause it; the countdown below shows when the next auto refresh fires.
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(AUTO_REFRESH_SECONDS);
+
+  // Transient "toast" banner for refresh failures / retry progress. Never
+  // surfaces raw HTTP status codes — just a friendly message + countdown.
+  const [toast, setToast] = useState(null);
+  // Short lockout right after a manual click so double-clicks can't spam
+  // the rate-limited refresh endpoint.
+  const [manualCooldown, setManualCooldown] = useState(0);
+  // Consecutive failed refresh attempts (reset on success). Drives backoff.
+  const [retryCount, setRetryCount] = useState(0);
+
+  const autoRefreshEnabledRef = useRef(true);
+  const tickerRef = useRef(null);
+  const toastTimerRef = useRef(null);
+  const cooldownTimerRef = useRef(null);
+  const isUpdatingRef = useRef(false);
+  const onStudentUpdateRef = useRef(onStudentUpdate);
 
   // History of session snapshots (completed vs not completed over time) that
   // feeds the "Activity Over Time" timeline chart
@@ -805,6 +830,232 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
     }
   };
 
+  // Helpers: single refresh path, 45s countdown, refs for ticker
+  useEffect(() => {
+    onStudentUpdateRef.current = onStudentUpdate;
+  }, [onStudentUpdate]);
+
+  useEffect(() => {
+    autoRefreshEnabledRef.current = autoRefreshEnabled;
+  }, [autoRefreshEnabled]);
+
+  useEffect(() => {
+    isUpdatingRef.current = isUpdating;
+  }, [isUpdating]);
+
+  const applySessionUpdate = useCallback((update) => {
+    if (update && update.active) {
+      setSession(update);
+      setLastUpdated(new Date());
+      setError(null);
+      setToast(null);
+      setRetryCount(0);
+      setActivityData((prev) => [
+        ...prev.slice(-20),
+        {
+          time: new Date(),
+          completed:
+            update.summary?.completedToday ?? update.summary?.completed ?? 0,
+          notCompleted:
+            update.summary?.notCompletedToday ?? update.summary?.not_completed ?? 0,
+        },
+      ]);
+      if (onStudentUpdateRef.current) onStudentUpdateRef.current(update);
+      return { ok: true };
+    }
+    if (update?.rateLimited || update?.retryable) {
+      // 429 / transient failure: keep the session alive, suppress the inline
+      // error bar — the retry toast owns this UX. Never show status codes.
+      return { ok: false, retryable: true, wait: update?.retryAfterSeconds ?? RETRY_DELAY_SECONDS };
+    }
+    if (update?.message) {
+      // Non-retryable error: inline bar only, no retry toast.
+      setError(update.message);
+      return { ok: false, retryable: false };
+    }
+    // Session ended server-side: drop the live view, no retry.
+    setSession({ active: false, session: null, students: [] });
+    return { ok: false, retryable: false, ended: true };
+  }, []);
+
+  const retryCountRef = useRef(0);
+  const retryPendingRef = useRef(false);
+  const manualCooldownRef = useRef(0);
+
+  const clearToastTimer = useCallback(() => {
+    if (toastTimerRef.current) {
+      clearInterval(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    retryPendingRef.current = false;
+  }, []);
+
+  const clearCooldownTimer = useCallback(() => {
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
+    }
+  }, []);
+
+  // Friendly transient banner. `secondsLeft` ticks down live; no HTTP codes.
+  // The retry itself fires from the retrySignal effect below, keeping this
+  // a pure countdown with no circular callback dependency.
+  const [retrySignal, setRetrySignal] = useState(0);
+  const showRetryToast = useCallback((secondsLeft, attempt) => {
+    clearToastTimer();
+    retryPendingRef.current = true;
+    setToast({
+      status: "retrying",
+      title: "Refresh failed",
+      message: `Retrying in ${secondsLeft}s… (attempt ${attempt} of ${MAX_AUTO_RETRIES})`,
+      secondsLeft,
+      attempt,
+    });
+    setSecondsUntilRefresh(secondsLeft);
+    toastTimerRef.current = setInterval(() => {
+      setToast((prev) => {
+        if (!prev || prev.status !== "retrying") {
+          clearToastTimer();
+          return prev;
+        }
+        const next = Math.max(0, (prev.secondsLeft ?? 0) - 1);
+        if (next <= 0) {
+          clearToastTimer();
+          // Bump the signal; the effect below performs the actual retry.
+          // setTimeout keeps setState-out-of-setState (no cascading render).
+          setTimeout(() => setRetrySignal((n) => n + 1), 0);
+          return {
+            ...prev,
+            message: `Retrying now… (attempt ${prev.attempt} of ${MAX_AUTO_RETRIES})`,
+            secondsLeft: 0,
+          };
+        }
+        return {
+          ...prev,
+          message: `Retrying in ${next}s… (attempt ${prev.attempt} of ${MAX_AUTO_RETRIES})`,
+          secondsLeft: next,
+        };
+      });
+      setSecondsUntilRefresh((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+  }, [clearToastTimer]);
+
+  const showFailedToast = useCallback(() => {
+    clearToastTimer();
+    setToast({
+      status: "failed",
+      title: "Refresh failed",
+      message: "Couldn't update just now — your data is safe. Please try again.",
+      secondsLeft: 0,
+      attempt: MAX_AUTO_RETRIES,
+    });
+  }, [clearToastTimer]);
+
+  const dismissToast = useCallback(() => {
+    clearToastTimer();
+    setToast(null);
+  }, [clearToastTimer]);
+
+  const startManualCooldown = useCallback(() => {
+    clearCooldownTimer();
+    manualCooldownRef.current = MANUAL_COOLDOWN_SECONDS;
+    setManualCooldown(MANUAL_COOLDOWN_SECONDS);
+    cooldownTimerRef.current = setInterval(() => {
+      manualCooldownRef.current -= 1;
+      const left = manualCooldownRef.current;
+      if (left <= 0) {
+        clearCooldownTimer();
+        manualCooldownRef.current = 0;
+        setManualCooldown(0);
+      } else {
+        setManualCooldown(left);
+      }
+    }, 1000);
+  }, [clearCooldownTimer, MANUAL_COOLDOWN_SECONDS]);
+
+  // Single place that hits the backend for fresh live data.
+  // source: "manual" | "auto" | "retry". Manual clicks start a short
+  // cooldown (button disabled) so double-clicks can't spam the endpoint.
+  // Failures schedule up-to MAX_AUTO_RETRIES automatic retries with a
+  // friendly "Refresh failed: retrying in Xs" toast (no error codes).
+  const pollSession = useCallback(async (source = "auto") => {
+    if (isUpdatingRef.current) return;
+    if (source === "manual" && manualCooldownRef.current > 0) return;
+    isUpdatingRef.current = true;
+    setIsUpdating(true);
+    // Any manual attempt clears the stale-failure banner immediately for
+    // instant feedback; a new one appears only if this attempt also fails.
+    if (source === "manual") {
+      clearToastTimer();
+      setToast(null);
+      startManualCooldown();
+    }
+    let succeeded;
+    let retryable;
+    let retryWait = RETRY_DELAY_SECONDS;
+    try {
+      const update = await updateLeetcodeSession({ retryAfterSeconds: RETRY_DELAY_SECONDS });
+      const result = applySessionUpdate(update);
+      succeeded = result.ok;
+      retryable = result.retryable !== false;
+      if (typeof result.wait === "number" && result.wait > 0) retryWait = result.wait;
+    } catch (err) {
+      console.error("Error refreshing:", err);
+      // Unexpected throw (shouldn't happen — the API helper swallows HTTP
+      // errors): treat as retryable, never show codes.
+      succeeded = false;
+      retryable = true;
+      setError(null);
+    }
+    isUpdatingRef.current = false;
+    setIsUpdating(false);
+    if (succeeded) {
+      clearToastTimer();
+      retryCountRef.current = 0;
+      setRetryCount(0);
+      setSecondsUntilRefresh(AUTO_REFRESH_SECONDS);
+      return;
+    }
+    if (!retryable) {
+      // Session ended or hard error — no retry, no toast spam.
+      setSecondsUntilRefresh(AUTO_REFRESH_SECONDS);
+      return;
+    }
+    // Failure path — back off with retries instead of hammering 429s
+    const nextCount = retryCountRef.current + 1;
+    retryCountRef.current = nextCount;
+    setRetryCount(nextCount);
+    if (nextCount > MAX_AUTO_RETRIES) {
+      retryCountRef.current = 0;
+      setRetryCount(0);
+      showFailedToast();
+      // Fall back to the normal cadence so data eventually recovers
+      setSecondsUntilRefresh(AUTO_REFRESH_SECONDS);
+    } else {
+      showRetryToast(retryWait, nextCount);
+    }
+  }, [
+    applySessionUpdate,
+    AUTO_REFRESH_SECONDS,
+    RETRY_DELAY_SECONDS,
+    MAX_AUTO_RETRIES,
+    clearToastTimer,
+    startManualCooldown,
+    showRetryToast,
+    showFailedToast,
+  ]);
+
+  // Fires the scheduled retry exactly once per countdown expiry.
+  // The timeout defers the async work out of the effect body so the
+  // effect itself only schedules — no sync setState inside effects.
+  useEffect(() => {
+    if (retrySignal === 0) return;
+    const id = setTimeout(() => {
+      pollSession("retry");
+    }, 0);
+    return () => clearTimeout(id);
+  }, [retrySignal, pollSession]);
+
   // Fetch current session status
   useEffect(() => {
     let isMounted = true;
@@ -840,16 +1091,70 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
 
     fetchSession();
     return () => { isMounted = false; };
-  }, []);
+  }, [AUTO_REFRESH_SECONDS]);
 
-  // Stop polling when the panel unmounts so no interval leaks
+  // 1s countdown ticker; auto refresh fires via effect below at 0.
+  // Paused while a retry toast owns the countdown (it drives its own timer),
+  // while a request is in flight, and when auto-refresh is off / inactive.
   useEffect(() => {
+    if (tickerRef.current) {
+      clearInterval(tickerRef.current);
+      tickerRef.current = null;
+    }
+    if (!session?.active || !autoRefreshEnabled) return;
+    if (toast?.status === "retrying") return;
+    if (isUpdating) return;
+    tickerRef.current = setInterval(() => {
+      setSecondsUntilRefresh((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
     return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
+      if (tickerRef.current) {
+        clearInterval(tickerRef.current);
+        tickerRef.current = null;
       }
     };
-  }, [pollingInterval]);
+  }, [session?.active, autoRefreshEnabled, toast?.status, isUpdating]);
+
+  // Fire one auto refresh per countdown expiry
+  useEffect(() => {
+    if (!session?.active || !autoRefreshEnabled) return;
+    if (toast?.status === "retrying") return;
+    if (secondsUntilRefresh !== 0) return;
+    if (isUpdatingRef.current) return;
+    pollSession();
+  }, [secondsUntilRefresh, session?.active, autoRefreshEnabled, toast?.status, pollSession]);
+
+  // Stop all timers on unmount
+  useEffect(() => {
+    return () => {
+      if (tickerRef.current) {
+        clearInterval(tickerRef.current);
+        tickerRef.current = null;
+      }
+      if (toastTimerRef.current) {
+        clearInterval(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const toggleAutoRefresh = useCallback(() => {
+    setAutoRefreshEnabled((prev) => {
+      const next = !prev;
+      if (next) {
+        setSecondsUntilRefresh(AUTO_REFRESH_SECONDS);
+      } else {
+        // Pausing cancels any pending retry countdown too
+        clearToastTimer();
+        setToast(null);
+      }
+      return next;
+    });
+  }, [AUTO_REFRESH_SECONDS, clearToastTimer]);
 
   // Start session
   const handleStartSession = async () => {
@@ -887,46 +1192,9 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
           lastUpdated: result.lastUpdated || new Date().toISOString(),
         });
         setLastUpdated(new Date());
-
-        // Never leave an earlier poller running
-        if (pollingInterval) {
-          clearInterval(pollingInterval);
-        }
-
-        // Start polling every 30 seconds (matches the backend rate limit)
-        const interval = setInterval(async () => {
-          const update = await updateLeetcodeSession();
-
-          if (update && update.active) {
-            setSession(update);
-            setLastUpdated(new Date());
-            setError(null);
-
-            // Add activity data point
-            setActivityData(prev => [
-              ...prev.slice(-20), // Keep last 20 data points
-              {
-                time: new Date(),
-                completed: update.summary?.completedToday || 0,
-                notCompleted: update.summary?.notCompletedToday || 0
-              }
-            ]);
-
-            if (onStudentUpdate) {
-              onStudentUpdate(update);
-            }
-          } else if (update?.message) {
-            // e.g. the 30 second rate limit kicked in
-            setError(update.message);
-          } else {
-            // The session ended server-side (no message = not a rate limit),
-            // so stop the poller and drop the live view
-            clearInterval(interval);
-            setPollingInterval(null);
-            setSession({ active: false, session: null, students: [] });
-          }
-        }, 30000);
-        setPollingInterval(interval);
+        // Auto-refresh ON by default: (re)arm 45s countdown (ticker picks it up)
+        setAutoRefreshEnabled(true);
+        setSecondsUntilRefresh(AUTO_REFRESH_SECONDS);
 
         // Seed the graph with the snapshot captured when the session started
         setActivityData([
@@ -962,10 +1230,12 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
         setLastReport((prev) => prev || buildSessionReport(session));
         setSession({ active: false, session: null, students: [] });
         setActivityData([]);
-        if (pollingInterval) {
-          clearInterval(pollingInterval);
-          setPollingInterval(null);
-        }
+        setSecondsUntilRefresh(AUTO_REFRESH_SECONDS);
+        // Ending clears all transient refresh UX
+        clearToastTimer();
+        setToast(null);
+        setRetryCount(0);
+        retryCountRef.current = 0;
       } else {
         setError(result?.error || "Failed to end session");
       }
@@ -977,32 +1247,23 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
     }
   };
 
-  // Manual refresh
+  // Manual refresh: locked while a request is in flight or during the
+  // post-click cooldown, so rapid clicks can't spam the rate limiter.
+  // Also restarts the auto-refresh countdown on success.
   const handleRefresh = async () => {
-    setIsUpdating(true);
-    try {
-      const update = await updateLeetcodeSession();
-      if (update && update.active) {
-        setSession(update);
-        setLastUpdated(new Date());
-
-        // Keep the activity timeline chart in sync with manual refreshes too
-        setActivityData((prev) => [
-          ...prev.slice(-20), // Keep last 20 data points
-          {
-            time: new Date(),
-            completed: update.summary?.completedToday ?? update.summary?.completed ?? 0,
-            notCompleted:
-              update.summary?.notCompletedToday ?? update.summary?.not_completed ?? 0,
-          },
-        ]);
-      }
-    } catch (err) {
-      console.error("Error refreshing:", err);
-    } finally {
-      setIsUpdating(false);
-    }
+    await pollSession("manual");
   };
+
+  const refreshDisabled = isUpdating || manualCooldown > 0;
+  const refreshLabel = isUpdating
+    ? "Updating…"
+    : manualCooldown > 0
+      ? `Wait ${manualCooldown}s`
+      : toast?.status === "retrying"
+        ? `Retrying in ${toast.secondsLeft ?? 0}s…`
+        : retryCount > 0
+          ? "Try again"
+          : "Refresh";
 
   if (!session) {
     return null;
@@ -1064,10 +1325,39 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
             <button
               className="ls-btn ls-btn-refresh"
               onClick={handleRefresh}
-              disabled={isUpdating}
+              disabled={refreshDisabled}
+              title={
+                manualCooldown > 0
+                  ? `Please wait ${manualCooldown}s before refreshing again`
+                  : "Refresh now"
+              }
             >
               <RefreshCw size={18} className={isUpdating ? "spin" : ""} />
-              {isUpdating ? "Updating..." : "Refresh"}
+              {refreshLabel}
+            </button>
+            <button
+              type="button"
+              className={`ls-btn ls-auto-refresh ${autoRefreshEnabled ? "ls-auto-refresh-on" : "ls-auto-refresh-off"}`}
+              onClick={toggleAutoRefresh}
+              aria-pressed={autoRefreshEnabled}
+              title={autoRefreshEnabled ? "Pause auto-refresh" : "Resume auto-refresh"}
+            >
+              {autoRefreshEnabled ? <Timer size={18} /> : <Pause size={18} />}
+              {autoRefreshEnabled ? (
+                <span className="ls-auto-refresh-label">
+                  Auto-refresh: {isUpdating ? "updating…" : `${secondsUntilRefresh}s`}
+                </span>
+              ) : (
+                <span className="ls-auto-refresh-label">Auto-refresh off</span>
+              )}
+              {autoRefreshEnabled && (
+                <span
+                  className="ls-auto-refresh-ring"
+                  role="img"
+                  aria-label={`Next refresh in ${secondsUntilRefresh} seconds`}
+                  style={{ "--ls-refresh-pct": `${Math.round((secondsUntilRefresh / AUTO_REFRESH_SECONDS) * 100)}%` }}
+                />
+              )}
             </button>
             <ReviewReportSection
               buildReport={buildSessionReport}
@@ -1077,6 +1367,49 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
           </div>
         )}
       </div>
+
+      {/* Friendly retry toast — no error codes, live countdown, dismissible */}
+      {toast && (
+        <div
+          className={`ls-toast ls-toast-${toast.status}`}
+          role={toast.status === "failed" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          <span className="ls-toast-icon">
+            {toast.status === "retrying" ? (
+              <RefreshCw size={16} className="spin" />
+            ) : (
+              <AlertCircle size={16} />
+            )}
+          </span>
+          <span className="ls-toast-text">
+            <strong>Refresh failed{toast.status === "retrying" ? `: retrying in ${toast.secondsLeft ?? 0}s` : ""}</strong>
+            <span>
+              {toast.status === "retrying"
+                ? `Attempt ${toast.attempt} of ${MAX_AUTO_RETRIES} — your data is safe.`
+                : toast.message}
+            </span>
+          </span>
+          {toast.status === "failed" && (
+            <button
+              type="button"
+              className="ls-toast-action"
+              onClick={handleRefresh}
+              disabled={refreshDisabled}
+            >
+              Try again
+            </button>
+          )}
+          <button
+            type="button"
+            className="ls-toast-dismiss"
+            onClick={dismissToast}
+            aria-label="Dismiss notification"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Error Message */}
       {error && (
@@ -1171,7 +1504,7 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
               <h4>Activity Over Time</h4>
               <span className="ls-graph-time">
                 <Clock size={14} />
-                Snapshot every 30s (or on Refresh)
+                Snapshot every 45s (or on Refresh)
               </span>
             </div>
             <ActivityTimelineChart activityData={activityData} totalCount={totalCount} />

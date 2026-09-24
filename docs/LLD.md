@@ -61,6 +61,51 @@ This document describes the implementation structure of the Kalvium Portfolio Ma
 - Body: { "url": "https://leetcode.com/username" }
 - Response: submission counts and profile ranking
 
+### Role-Based Access Control
+Roles live in Supabase auth metadata (`user_metadata.role`, falling back to `app_metadata.role`).
+`frontend/src/hooks/useAuthStatus.js` exposes `getUserRole(user)` as the single source of truth.
+
+Frontend routes (`frontend/src/App.jsx`), guarded by `frontend/src/components/AuthGate.jsx`:
+- `/student/dashboard/:tab` — allowedRoles `["student"]`, rendered by `EditProfile`
+- `/mentor/dashboard/:tab` — allowedRoles `["mentor"]`, rendered by `MentorDashboard`
+- `/dashboard` — legacy entry point that redirects each role to its home
+
+Notes:
+- Tab slugs map to sidebar labels in `frontend/src/pages/MentorDashboard/dashboardRoutes.js`
+  (`dashboard`, `overview`, `assigned`, `review`, `settings` for mentors;
+  `dashboard`, `profile`, `projects`, `achievements`, `settings` for students).
+- The base `/<role>/dashboard` path *is* the default "Dashboard" tab — it renders
+  in place rather than redirecting, so the main dashboard URL stays `/mentor/dashboard`
+  (`STUDENT_HOME` / `MENTOR_HOME` are those base paths).
+- Non-default tabs append the slug: `/mentor/dashboard/review`, `/student/dashboard/projects`, etc.
+- `/<role>/dashboard/dashboard` and any unknown slug are canonicalized back to the bare
+  base path by `TabGuard`.
+- A signed-in user whose role is not allowed for the requested area gets the
+  `AccessDenied` page (`frontend/src/components/AccessDenied.jsx`) instead of the
+  dashboard. It renders the site's own Navbar/Footer and brand styling (the dashboard
+  routes otherwise hide the site chrome) and offers a link to the user's own dashboard;
+  unauthenticated users go to `/login`.
+
+### Dead-End Screens
+Every "there is nothing here" screen shares one on-brand panel
+(`frontend/src/components/EmptyState.css` — Inter, `#e8342a`, 14px buttons) so an
+error state never drops the visitor onto a browser-default page:
+- `pages/ErrorPage/404page.jsx` — the `path="*"` route. Keeps the site Navbar/Footer,
+  shows the requested path, and offers Back to home plus Go to my dashboard (signed in)
+  or View leaderboard (guest).
+- `src/pages/IndividualStudentPortfolio.jsx` — unknown `:user_id` → "Student not found".
+- `src/pages/StudentProjectDetails.jsx` — unknown `:project_slug` → "Project not found".
+- `components/AuthGate.css` styles the transient session check with the same vocabulary.
+
+Site chrome in `App.jsx` is hidden only *inside* the dashboard areas, matched per path
+segment, so a typo such as `/mentor/dashboardfoo` still renders the 404 with the navbar.
+
+Backend enforcement (`requireRole` in both dashboard route modules):
+- `requireAuth` validates the bearer token and populates `req.user`; `requireRole`
+  runs after it and rejects a missing or non-matching role.
+- `mentor_dashboard.routes.js` applies `requireMentor` to all 16 authenticated routes.
+- `student_dashboard.routes.js` applies `requireStudent` to all 10 authenticated routes.
+
 ## 5. Data Model Notes
 The current implementation expects a Supabase table named profiles with fields such as:
 - user_id
@@ -82,6 +127,7 @@ The current implementation expects a Supabase table named profiles with fields s
 - LeetCode usernames must match a basic safe regex pattern.
 - Empty update payloads should be rejected with a 400 response.
 - Missing or invalid bearer tokens should be rejected with a 401 response.
+- A valid token whose role does not match the route area must be rejected with a 403 response.
 
 ## 7. Error Handling Strategy
 - Validation errors return structured JSON with an error field.

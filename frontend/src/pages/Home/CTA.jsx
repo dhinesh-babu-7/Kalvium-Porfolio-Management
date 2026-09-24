@@ -1,15 +1,17 @@
 import "./CTA.css"
 import { NavLink, useNavigate } from "react-router-dom"
 import { FaArrowRightLong } from "react-icons/fa6"
-import { useAuthStatus } from "../../hooks/useAuthStatus";
+import { useUserRole } from "../../hooks/useAuthStatus";
+import { MENTOR_HOME, STUDENT_HOME } from "../../components/AuthGate";
 export default function CTA() {
 
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuthStatus();
+    const { isAuthenticated, role } = useUserRole();
+    const dashboardHome = role === "mentor" ? MENTOR_HOME : STUDENT_HOME;
 
     const handleLoginClick = (e) => {
         e.preventDefault();
-        navigate(isAuthenticated ? "/dashboard" : "/login");
+        navigate(isAuthenticated ? dashboardHome : "/login");
     };
     return (
         <section className="cta-band" aria-labelledby="cta-title">
@@ -30,7 +32,7 @@ export default function CTA() {
                         <FaArrowRightLong aria-hidden="true" />
                     </NavLink>
                     <NavLink
-                        to={isAuthenticated ? "/dashboard" : "/login"}
+                        to={isAuthenticated ? dashboardHome : "/login"}
                         href="#"
                         onClick={handleLoginClick}
                         className="cta-band__button cta-band__button--ghost"

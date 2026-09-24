@@ -1,7 +1,7 @@
 import getCroppedImg from "../../utils/cropImage";
 import ImageCropper from "../../components/ImageCropper";
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   LayoutDashboard,
   User,
@@ -37,6 +37,7 @@ import DashboardTab from "./DashboardTab.jsx";
 import { getProfile, updateProfile } from "../../api/routes/StudentDashboard/profile.js";
 import Projects from "./Projects.jsx";
 import AchievementsTab from "./AchievementsTab.jsx";
+import { studentLabelToSlug, studentSlugToLabel, studentTabPath } from "../MentorDashboard/dashboardRoutes.js";
 
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard },
@@ -67,7 +68,14 @@ export default function ProfileTab({
   isLoading: initialLoading = false,
   onProfileChange
 }) {
-  const [activeNav, setActiveNav] = useState("Profile");
+  const { tab } = useParams();
+  const navigate = useNavigate();
+  // URL is the source of truth: back/forward + deep links always render the
+  // right tab with zero local-state sync effects.
+  const activeNav = studentSlugToLabel(tab);
+  const setActiveNav = (label) => {
+    navigate(studentTabPath(studentLabelToSlug(label)));
+  };
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [profile, setProfile] = useState(profileData || {});
   const [image, setImage] = useState(null);
@@ -86,7 +94,6 @@ export default function ProfileTab({
   const [toastType, setToastType] = useState("error");
   const [isExiting, setIsExiting] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
-  const navigate = useNavigate();
 
   const getProp = (snakeKey, camelKey, fallback = "") => {
     const val = profile?.[snakeKey] ?? profile?.[camelKey];

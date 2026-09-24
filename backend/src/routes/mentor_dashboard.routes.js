@@ -47,6 +47,19 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
+// Role guard: mentor-only routes reject students (and role-less accounts)
+// with 403 instead of leaking data. Role lives in user_metadata.role with
+// app_metadata.role as fallback (same source the frontend AuthGate uses).
+const requireRole = (...allowedRoles) => (req, res, next) => {
+  const role = req.user?.user_metadata?.role ?? req.user?.app_metadata?.role ?? null;
+  if (!role || !allowedRoles.includes(role)) {
+    return res.status(403).json({ error: "Forbidden: insufficient role" });
+  }
+  next();
+};
+
+const requireMentor = requireRole("mentor");
+
 // ==========================================
 // HELPER: NORMALIZE STUDENT ACTIVITY FIELDS
 // ==========================================
@@ -135,7 +148,7 @@ const createLeaderboardMap = (leaderboardRows = []) => {
 // ==========================================
 
 // NEW: GET ALL DISTINCT SQUADS FROM PROFILES TABLE FOR OVERVIEW
-router.get("/getsquadsOverview", requireAuth, async (req, res) => {
+router.get("/getsquadsOverview", requireAuth, requireMentor, async (req, res) => {
   try {
     const db = req.authedSupabase;
 
@@ -172,7 +185,7 @@ router.get("/getsquadsOverview", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/getsquads", requireAuth, async (req, res) => {
+router.get("/getsquads", requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
     const db = req.authedSupabase;
@@ -200,7 +213,7 @@ router.get("/getsquads", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/savesquad", saveSquadLimiter, requireAuth, async (req, res) => {
+router.post("/savesquad", saveSquadLimiter, requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
     const { squads } = req.body;
@@ -254,7 +267,7 @@ router.post("/savesquad", saveSquadLimiter, requireAuth, async (req, res) => {
   }
 });
 
-router.get("/students", requireAuth, async (req, res) => {
+router.get("/students", requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
     const db = req.authedSupabase;
@@ -336,7 +349,7 @@ router.get("/students", requireAuth, async (req, res) => {
 // INDIVIDUAL STUDENT ROUTES (squad_students)
 // ==========================================
 
-router.get("/assigned-students", requireAuth, async (req, res) => {
+router.get("/assigned-students", requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
     const db = req.authedSupabase;
@@ -410,7 +423,7 @@ router.get("/assigned-students", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/student-stats/:studentUserId", requireAuth, async (req, res) => {
+router.get("/student-stats/:studentUserId", requireAuth, requireMentor, async (req, res) => {
   try {
     const { studentUserId } = req.params;
     const db = req.authedSupabase;
@@ -438,7 +451,7 @@ router.get("/student-stats/:studentUserId", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/assign-student", requireAuth, async (req, res) => {
+router.post("/assign-student", requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
     const { student_user_id, squad_id } = req.body;
@@ -473,7 +486,7 @@ router.post("/assign-student", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/unassign-student", requireAuth, async (req, res) => {
+router.post("/unassign-student", requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
     const { student_user_id } = req.body;
@@ -506,7 +519,7 @@ router.post("/unassign-student", requireAuth, async (req, res) => {
 // MENTOR REVIEW QUEUE
 // ==========================================
 
-router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
+router.get("/leetcode-review/queue", requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
     const db = req.authedSupabase;
@@ -686,7 +699,7 @@ router.get("/leetcode-review/queue", requireAuth, async (req, res) => {
 
 router.patch(
   "/leetcode-review/:studentUserId/approve",
-  requireAuth,
+  requireAuth, requireMentor,
   async (req, res) => {
     try {
       const { studentUserId } = req.params;
@@ -774,7 +787,7 @@ router.patch(
 
 router.patch(
   "/leetcode-review/:studentUserId/reject",
-  requireAuth,
+  requireAuth, requireMentor,
   async (req, res) => {
     try {
       const { studentUserId } = req.params;
@@ -850,15 +863,15 @@ router.patch(
 // LEETCODE SESSION ROUTES
 // ==========================================
 
-// Session live-refresh limiter - one real-time snapshot per 30 seconds per mentor.
+// Session live-refresh limiter - one real-time snapshot per 45 seconds per mentor.
 // requireAuth is mounted before this so req.user is always present, which lets us
 // key on the mentor id. Note: referencing req.ip here would make express-rate-limit
 // v8 throw ERR_ERL_KEY_GEN_IPV6 at import time, so the key is mentor-only.
 const sessionRateLimiter = rateLimit({
-  windowMs: 30 * 1000,
+  windowMs: 45 * 1000,
   max: 2,
   keyGenerator: (req) => String(req.user?.id || "anonymous"),
-  message: { error: "Please wait 30 seconds before requesting another update" },
+  message: { error: "Please wait 45 seconds before requesting another update" },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -876,7 +889,7 @@ const LIVE_STATS_CACHE_TTL_MS = 25 * 1000;
 const LEETCODE_FETCH_TIMEOUT_MS = 8000;
 
 // handle -> { data, fetchedAt }: stops LeetCode being hammered when several
-// mentors poll inside the same 30 second window
+// mentors poll inside the same 45 second window
 const liveStatsCache = new Map();
 
 // sessionId -> { startedAt, users: { [userId]: { totalSolved, submissionIds } } }
@@ -939,12 +952,12 @@ const LIVE_STATS_QUERY_FAST = `
 // once-a-day values stored in leetcode_leaderboard. Two shapes are supported:
 // "full" (stats + recent submissions, used on manual refresh / updates) and
 // "fast" (stats only, used when starting a session so it returns quickly).
-async function fetchLiveLeetcodeStats(username, mode = "full") {
+async function fetchLiveLeetcodeStats(username, mode = "full", { forceFresh = false } = {}) {
   const handle = extractLeetcodeHandle(username);
   if (!handle) return null;
 
   const cached = liveStatsCache.get(handle);
-  if (cached && Date.now() - cached.fetchedAt < LIVE_STATS_CACHE_TTL_MS) {
+  if (!forceFresh && cached && Date.now() - cached.fetchedAt < LIVE_STATS_CACHE_TTL_MS) {
     // A cached FULL snapshot satisfies both modes. A cached FAST snapshot is
     // only good enough for another fast request - never serve it as full or
     // the session would lose its recent-submissions baseline.
@@ -1072,7 +1085,7 @@ async function getSessionStudents(db, squadIds = []) {
 // trips to LeetCode)
 const LIVE_STATS_CONCURRENCY = 8;
 
-async function attachLiveStats(students = [], mode = "full") {
+async function attachLiveStats(students = [], mode = "full", { forceFresh = false } = {}) {
   const enriched = new Array(students.length);
 
   const worker = async (queue) => {
@@ -1095,7 +1108,7 @@ async function attachLiveStats(students = [], mode = "full") {
         continue;
       }
 
-      const live = await fetchLiveLeetcodeStats(student.leetcode_username, mode);
+      const live = await fetchLiveLeetcodeStats(student.leetcode_username, mode, { forceFresh });
       const latestSubmission = live?.recentSubmissions?.[0] || null;
 
       enriched[index] = {
@@ -1124,7 +1137,7 @@ async function attachLiveStats(students = [], mode = "full") {
 
 // GET /mentor/dashboard/leetcode-session
 // Returns the mentor's active session together with a live LeetCode snapshot
-router.get("/leetcode-session", requireAuth, async (req, res) => {
+router.get("/leetcode-session", requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
     const db = req.authedSupabase;
@@ -1158,7 +1171,7 @@ router.get("/leetcode-session", requireAuth, async (req, res) => {
 });
 
 // POST /mentor/dashboard/leetcode-session/start
-router.post("/leetcode-session/start", requireAuth, async (req, res) => {
+router.post("/leetcode-session/start", requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
     const { squad_ids } = req.body;
@@ -1240,18 +1253,23 @@ router.post("/leetcode-session/start", requireAuth, async (req, res) => {
     }
 
     // Capture the live LeetCode baseline straight away, so "completed during
-    // session" is measured from this exact moment onwards. Fast mode (stats
-    // only, parallel) keeps session start snappy; recent submissions fill in
-    // on the first 30s refresh.
+    // session" is measured from this exact moment onwards. Bypass the shared
+    // liveStatsCache: it may hold a snapshot from an earlier poll, and using
+    // it as the baseline would mark old solves as "completed at second 0".
+    // Fast mode (stats only, parallel) keeps session start snappy; recent
+    // submissions are timestamp-guarded, so old solves stay out.
     let payload = { active: false, session: newSession, students: [], summary: null };
 
     try {
       const baseStudents = await getSessionStudents(db, squad_ids);
-      const initialStudents = await attachLiveStats(baseStudents, "fast");
+      // forceFresh: bypass the shared cache so the baseline is a truly fresh
+      // snapshot — a cached snapshot from an earlier poll would mark old
+      // solves as "completed at second 0".
+      const initialStudents = await attachLiveStats(baseStudents, "fast", { forceFresh: true });
 
       setSessionBaseline(newSession, initialStudents);
 
-      payload = await buildSessionPayload(db, newSession, "fast");
+      payload = await buildSessionPayload(db, newSession, "fast", { forceFresh: true });
     } catch (baselineError) {
       console.warn(
         "Session baseline capture failed:",
@@ -1273,7 +1291,7 @@ router.post("/leetcode-session/start", requireAuth, async (req, res) => {
 // POST /mentor/dashboard/leetcode-session/end
 // Captures the final live snapshot BEFORE the baseline is dropped, so the
 // mentor can review / re-download this session later (Review Report).
-router.post("/leetcode-session/end", requireAuth, async (req, res) => {
+router.post("/leetcode-session/end", requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
 
@@ -1459,45 +1477,71 @@ function setSessionBaseline(session, students = []) {
   if (!session?.id) return;
 
   const users = {};
+  let capturedCount = 0;
   students.forEach((student) => {
+    // A baseline is only trustworthy when we actually reached LeetCode right
+    // now. fetch_failed / null live_total_solved means "unknown", so the
+    // student is recorded with baseline_ok: false and withSessionActivity
+    // will refuse to mark them completed until a fresh fetch succeeds.
+    const liveOk = !student.fetch_failed && student.live_total_solved != null;
+    if (liveOk) capturedCount += 1;
     users[student.user_id] = {
-      totalSolved: student.live_total_solved ?? student.db_total_solved ?? 0,
+      totalSolved: liveOk
+        ? student.live_total_solved
+        : (student.db_total_solved ?? 0),
+      stale: !liveOk,
       submissionIds: (student.recent_submissions || []).map((sub) => sub.id),
     };
   });
 
   sessionBaselines.set(String(session.id), {
     startedAt: session.started_at,
+    capturedCount,
     users,
   });
 }
 
-// Compares the live snapshot against the baseline of the running session
+// Compares the live snapshot against the baseline of the running session.
+// A student can only be "completed" when BOTH sides are fresh: a verified
+// baseline (captured from a successful fetch at session start) and a fresh
+// live fetch now. Anything "unknown" stays not-completed rather than
+// guessing — this is what stops the "5 finished at second 0" phantom.
 function withSessionActivity(students = [], session) {
   const baseline = sessionBaselines.get(String(session?.id)) || null;
   const startedAtMs = session?.started_at ? new Date(session.started_at).getTime() : 0;
 
   return students.map((student) => {
     const base = baseline?.users?.[student.user_id] || null;
-    const baseTotalSolved =
-      base?.totalSolved ?? student.live_total_solved ?? student.db_total_solved ?? 0;
+    // No baseline entry at all (e.g. restarted server + brand-new code path
+    // that hasn't captured yet): fall back to "not completed" instead of
+    // comparing against the possibly-different live total.
+    const baselineOk = Boolean(base) && !base.stale;
+    const liveOk = !student.fetch_failed && student.live_total_solved != null;
+    const comparable = baselineOk && liveOk;
+
+    const baseTotalSolved = base?.totalSolved ?? 0;
 
     const knownIds = new Set(base?.submissionIds || []);
 
-    const newSubmissions = (student.recent_submissions || []).filter(
-      (sub) => !knownIds.has(sub.id) && sub.timestamp * 1000 >= startedAtMs
-    );
+    // Only trust new-submission ids when the baseline actually contained a
+    // submission list (full fetch). Fast-mode baselines have [] ids, and
+    // comparing a full list against [] would flag EVERYTHING as new — the
+    // startedAtMs timestamp guard below is what keeps that case honest.
+    const newSubmissions = comparable
+      ? (student.recent_submissions || []).filter(
+        (sub) => !knownIds.has(sub.id) && sub.timestamp * 1000 >= startedAtMs
+      )
+      : [];
 
-    const solvedDuringSession =
-      student.live_total_solved == null
-        ? 0
-        : Math.max(student.live_total_solved - baseTotalSolved, 0);
+    const solvedDuringSession = comparable
+      ? Math.max(student.live_total_solved - baseTotalSolved, 0)
+      : 0;
 
     const completed = solvedDuringSession > 0 || newSubmissions.length > 0;
 
     return {
       ...student,
-      baseline_available: Boolean(base),
+      baseline_available: Boolean(base) && baselineOk,
       base_total_solved: baseTotalSolved,
       solved_during_session: solvedDuringSession,
       new_submissions: newSubmissions,
@@ -1550,7 +1594,7 @@ function buildSessionSummary(students = []) {
 // GET /mentor/dashboard/leetcode-session/reports?scope=last5|last3days
 // Mentor-scoped history for the Review Report button. Defaults to the last 5
 // ended sessions; scope=last3days uses a rolling 72h window on ended_at.
-router.get("/leetcode-session/reports", requireAuth, async (req, res) => {
+router.get("/leetcode-session/reports", requireAuth, requireMentor, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
     const db = req.authedSupabase;
@@ -1614,15 +1658,19 @@ router.get("/leetcode-session/reports", requireAuth, async (req, res) => {
 // Shared builder for GET /leetcode-session and GET /leetcode-session/update.
 // mode is "fast" on session start (stats only, returns quickly) and "full" on
 // refresh/update (stats + recent submissions for the activity diff).
-async function buildSessionPayload(db, session, mode = "full") {
+async function buildSessionPayload(db, session, mode = "full", { forceFresh = false } = {}) {
   const baseStudents = await getSessionStudents(db, session.squad_ids || []);
 
   // A fresh session - or one restored after a server restart - has no baseline
   // yet, so capture one now and compare later updates against it.
   if (!sessionBaselines.has(String(session.id))) {
-    const initialStudents = await attachLiveStats(baseStudents, mode);
+    const initialStudents = await attachLiveStats(baseStudents, mode, { forceFresh });
     setSessionBaseline(session, initialStudents);
 
+    // IMPORTANT: diff the payload against the JUST-captured baseline, not
+    // against live data alone — solved_during_session must be ~0 at start.
+    // When the baseline had to come from fast mode (no submission ids), the
+    // timestamp guard in withSessionActivity keeps old solves out.
     const students = withSessionActivity(initialStudents, session);
 
     return {
@@ -1634,7 +1682,10 @@ async function buildSessionPayload(db, session, mode = "full") {
     };
   }
 
-  const students = withSessionActivity(await attachLiveStats(baseStudents, mode), session);
+  const students = withSessionActivity(
+    await attachLiveStats(baseStudents, mode, { forceFresh }),
+    session
+  );
 
   return {
     active: true,
@@ -1645,9 +1696,9 @@ async function buildSessionPayload(db, session, mode = "full") {
   };
 }
 
-// GET /mentor/dashboard/leetcode-session/update - Rate limited to 30s
+// GET /mentor/dashboard/leetcode-session/update - Rate limited to 45s
 // requireAuth runs first so the limiter can key on the mentor's own id
-router.get("/leetcode-session/update", requireAuth, sessionRateLimiter, async (req, res) => {
+router.get("/leetcode-session/update", requireAuth, requireMentor, sessionRateLimiter, async (req, res) => {
   try {
     const mentorUserId = req.user.id;
 

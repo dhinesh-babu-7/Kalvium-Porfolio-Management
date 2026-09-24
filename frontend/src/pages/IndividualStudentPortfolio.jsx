@@ -1,4 +1,5 @@
 import "./IndividualStudentPortfolio.css";
+import "../components/EmptyState.css";
 import { useParams, Navigate, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getStudentByUserId, getGithubStats, getLeetcodeStats, getStudentProjects, getStudentAchievements } from "../api/routes/Public/StudentInfo.js";
@@ -204,9 +205,34 @@ export default function IndividualStudentPortfolio() {
   // Error State UI
   if (error || !student) {
     return (
-      <div className="error-container" style={{ textAlign: "center", padding: "80px 20px" }}>
-        <h2>{error || "Student not found"}</h2>
-      </div>
+      <main className="empty-state">
+        <section className="empty-state__card">
+          <h1 className="empty-state__title">Student not found</h1>
+
+          <p className="empty-state__body">
+            We couldn’t load a portfolio for that student. The profile may have
+            been removed, or the link you followed may be out of date.
+          </p>
+
+          {error && (
+            <p className="empty-state__path">
+              Details: <code>{error}</code>
+            </p>
+          )}
+
+          <div className="empty-state__actions">
+            <Link
+              className="empty-state__btn empty-state__btn--primary"
+              to="/students"
+            >
+              Browse all students
+            </Link>
+            <Link className="empty-state__btn empty-state__btn--ghost" to="/">
+              Back to home
+            </Link>
+          </div>
+        </section>
+      </main>
     );
   }
 
