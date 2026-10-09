@@ -997,7 +997,7 @@ function ActivityTimelineChart({ activityData, totalCount }) {
   );
 }
 
-export default function LeetCodeSessionPanel({ squads, assignedStudents, onStudentUpdate }) {
+export default function LeetCodeSessionPanel({ squads, assignedStudents, onStudentUpdate, onSessionEnded }) {
   const AUTO_REFRESH_SECONDS = 45;
   const MAX_AUTO_RETRIES = 3;
   const RETRY_DELAY_SECONDS = 10;
@@ -1031,6 +1031,7 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
   const cooldownTimerRef = useRef(null);
   const isUpdatingRef = useRef(false);
   const onStudentUpdateRef = useRef(onStudentUpdate);
+  const onSessionEndedRef = useRef(onSessionEnded);
   // Students from the last successful payload + timer for the "attempted an
   // already completed question" warning toast raised on refresh diffs.
   const prevStudentsRef = useRef(null);
@@ -1168,6 +1169,10 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
   }, [onStudentUpdate]);
 
   useEffect(() => {
+    onSessionEndedRef.current = onSessionEnded;
+  }, [onSessionEnded]);
+
+  useEffect(() => {
     autoRefreshEnabledRef.current = autoRefreshEnabled;
   }, [autoRefreshEnabled]);
 
@@ -1232,10 +1237,13 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
       setError(update.message);
       return { ok: false, retryable: false };
     }
-    // Session ended server-side: drop the live view, no retry.
+    // Session ended server-side: drop the live view, no retry. Notify the
+    // Assigned tab so it can clear its permanent cache + refetch the fresh
+    // activity snapshot the backend just persisted.
     prevStudentsRef.current = null;
     clearSessionCache();
     setSession({ active: false, session: null, students: [] });
+    if (onSessionEndedRef.current) onSessionEndedRef.current();
     return { ok: false, retryable: false, ended: true };
   }, []);
 
@@ -1629,6 +1637,8 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
         // Fall back to the pre-end snapshot if session state was empty
         setLastReport((prev) => prev || buildSessionReport(session));
         // Mentor ended the session — the localStorage snapshot goes too.
+        // Backend just persisted the fresh activity snapshot, so tell the
+        // Assigned tab to clear its permanent cache + refetch.
         clearSessionCache();
         setSession({ active: false, session: null, students: [] });
         prevStudentsRef.current = null;
@@ -1639,6 +1649,7 @@ export default function LeetCodeSessionPanel({ squads, assignedStudents, onStude
         setToast(null);
         setRetryCount(0);
         retryCountRef.current = 0;
+        if (onSessionEndedRef.current) onSessionEndedRef.current();
       } else {
         setError(result?.error || "Failed to end session");
       }

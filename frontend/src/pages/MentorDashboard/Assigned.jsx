@@ -38,8 +38,6 @@ import { getExceptionRequestCount } from "../../api/routes/Mentor/exception.js";
 import {
   isRecentlyActive as isStudentActive,
   isOneToSixDaysInactive as is1DayInactiveStudent,
-  lastAcceptedFromLeetcodeStats,
-  withLiveLastSolved,
 } from "../../utils/activity";
 
 import "./assigned.css";
@@ -128,20 +126,75 @@ const formatDateTime = (rawTime) => {
   };
 };
 
-// Profile URL for lazy live LeetCode status checks (mirrors the modal's URL formatting).
-const getLeetcodeProfileUrl = (student) => {
-  const raw = student?.leetcode || student?.leetcode_url;
-  if (!raw) return null;
-  if (raw.startsWith("http")) return raw;
-  return `https://leetcode.com/u/${raw}`;
+// Permanent localStorage snapshot for the Assigned tab. Status badges are
+// derived ONLY from cron-maintained DB values (last_solved_at /
+// leetcode_leaderboard) plus the activity snapshot persisted at LeetCode
+// session end — never from a per-page-load live LeetCode check. The snapshot
+// survives refresh; it is refreshed on successful fetch and cleared only when
+// a LeetCode session ends (session end re-persists + refetches fresh data).
+const ASSIGNED_CACHE_KEY = "kalvium.mentor.assigned.v1";
+
+const readAssignedCache = () => {
+  try {
+    const raw = window.localStorage.getItem(ASSIGNED_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.assignedStudents)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const writeAssignedCache = (payload) => {
+  try {
+    window.localStorage.setItem(ASSIGNED_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // Storage full / blocked — non-fatal, page still works from network.
+  }
+};
+
+const clearAssignedCache = () => {
+  try {
+    window.localStorage.removeItem(ASSIGNED_CACHE_KEY);
+  } catch {
+    // ignore
+  }
 };
 
 export default function Assigned({ onOpenExceptions }) {
-  // Data States
-  const [assignedStudents, setAssignedStudents] = useState([]);
-  const [allStudents, setAllStudents] = useState([]);
-  const [mentorSquads, setMentorSquads] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Hydrate synchronously from the permanent cache so a refresh keeps the
+  // last cron / session-end snapshot instantly (no blank, no re-verify).
+  const [assignedStudents, setAssignedStudents] = useState(() => {
+    try {
+      return readAssignedCache()?.assignedStudents || [];
+    } catch {
+      return [];
+    }
+  });
+  const [allStudents, setAllStudents] = useState(() => {
+    try {
+      return readAssignedCache()?.allStudents || [];
+    } catch {
+      return [];
+    }
+  });
+  const [mentorSquads, setMentorSquads] = useState(() => {
+    try {
+      return readAssignedCache()?.mentorSquads || [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = readAssignedCache();
+      // Skip the full-page loader when we already have cached rows.
+      return !(cached && cached.assignedStudents?.length >= 0 && cached.fetchedAt);
+    } catch {
+      return true;
+    }
+  });
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [bulkAssigning, setBulkAssigning] = useState(false);
   // Exception requests badge — head-count endpoint, loads in parallel (fast)
@@ -162,17 +215,20 @@ export default function Assigned({ onOpenExceptions }) {
   const [loadingStats, setLoadingStats] = useState(false);
   const [statsError, setStatsError] = useState(null);
 
-  // Live LeetCode stats cache used to refresh stale status badges between
-  // leaderboard cron runs (keyed by student id → { lastSolvedAt }).
-  const [tableStatsCache, setTableStatsCache] = useState({});
+  // Live LeetCode stats cache removed: status badges must NOT re-verify on
+  // page load. They update only via the daily cron + the activity snapshot
+  // persisted when a LeetCode session ends.
 
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [modalSquadFilter, setModalSquadFilter] = useState("all");
   const [modalSearch, setModalSearch] = useState("");
 
-  // Fetch Dashboard Data with array normalization
-  const fetchDashboardData = async () => {
-    setLoading(true);
+  // Fetch Dashboard Data with array normalization.
+  // Shows the permanent localStorage snapshot instantly, then revalidates in
+  // the background. Status comes ONLY from DB (cron + session-end persist) —
+  // no live LeetCode re-check here, so badges never flip on page load.
+  const fetchDashboardData = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const [squadsData, assignedData, allStudentsData] = await Promise.all([
         getSquads(),
@@ -206,18 +262,40 @@ export default function Assigned({ onOpenExceptions }) {
       setMentorSquads(squadsList);
       setAssignedStudents(assignedList);
       setAllStudents(allStudentsList);
+      // Permanently persist so refresh restores data (not just this session).
+      writeAssignedCache({
+        assignedStudents: assignedList,
+        allStudents: allStudentsList,
+        mentorSquads: squadsList,
+        fetchedAt: new Date().toISOString(),
+      });
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
-      setMentorSquads([]);
-      setAssignedStudents([]);
-      setAllStudents([]);
+      // On network failure keep the permanent cache — never blank the page
+      // when we already have stored rows.
+      const cached = readAssignedCache();
+      if (!cached) {
+        setMentorSquads([]);
+        setAssignedStudents([]);
+        setAllStudents([]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
+  // Called when a LeetCode session ends: the backend has just persisted the
+  // fresh activity snapshot, so drop the old permanent cache and refetch.
+  const handleSessionEnded = () => {
+    clearAssignedCache();
+    setAssignedStudents([]);
     fetchDashboardData();
+  };
+
+  useEffect(() => {
+    // Silent background revalidation: cached rows render instantly, network
+    // only refreshes the permanent snapshot (badges stay cron/session data).
+    fetchDashboardData({ silent: Boolean(readAssignedCache()?.fetchedAt) });
     // Fire in parallel with the heavy squad fetch so the notice appears fast.
     getExceptionRequestCount().then((d) => setExceptionCount(d?.pendingCount ?? 0)).catch(() => {});
   }, []);
@@ -351,16 +429,11 @@ export default function Assigned({ onOpenExceptions }) {
     [mentorSquads]
   );
 
-  // Overlay fresher live last-solved values so status badges don't lag behind
-  // the daily leaderboard cron snapshot.
+  // Computed Metrics (DB values only: daily cron + session-end persist — no
+  // per-load live re-check, so badges never flip on refresh).
   const assignedWithLiveData = useMemo(
-    () =>
-      safeAssignedStudents.map((student) => {
-        const studentId = student.student_user_id || student.user_id || student.id;
-        const cached = tableStatsCache[studentId];
-        return cached?.lastSolvedAt ? withLiveLastSolved(student, cached.lastSolvedAt) : student;
-      }),
-    [safeAssignedStudents, tableStatsCache]
+    () => safeAssignedStudents,
+    [safeAssignedStudents]
   );
 
   // Computed Metrics
@@ -413,64 +486,9 @@ export default function Assigned({ onOpenExceptions }) {
     return filteredStudents.slice(start, start + itemsPerPage);
   }, [filteredStudents, currentPage]);
 
-  // ==========================================
-  // VERIFY STALE STATUS BADGES WITH LIVE LEETCODE DATA
-  // Rows whose stored status is inactive would render a false "1-Day Inactive"
-  // / "Inactive" badge when the leaderboard cron snapshot hasn't caught up with
-  // recent submissions, so re-check just those rows against live LeetCode stats
-  // (throttled; pauses on rate limits and trusts the stored value after that).
-  // ==========================================
-  useEffect(() => {
-    let isMounted = true;
-
-    const verifyStaleStatuses = async () => {
-      for (const student of paginatedStudents) {
-        if (!isMounted) break;
-
-        const studentId = student.student_user_id || student.user_id || student.id;
-        if (tableStatsCache[studentId]) continue;
-
-        // Only rows that would render a warning/inactive badge need verification.
-        if (!is1DayInactiveStudent(student) && isStudentActive(student)) continue;
-
-        const leetcodeUrl = getLeetcodeProfileUrl(student);
-        if (!leetcodeUrl) {
-          if (isMounted) {
-            setTableStatsCache((prev) => ({ ...prev, [studentId]: { lastSolvedAt: null } }));
-          }
-          continue;
-        }
-
-        try {
-          const res = await getLeetcodeStats(leetcodeUrl);
-          if (isMounted) {
-            const lastSolvedAt = res && !res.error ? lastAcceptedFromLeetcodeStats(res) : null;
-            setTableStatsCache((prev) => ({
-              ...prev,
-              [studentId]: { lastSolvedAt: lastSolvedAt || null },
-            }));
-          }
-        } catch (err) {
-          const is429 = err?.response?.status === 429 || String(err?.message).includes("429");
-          if (is429) {
-            // Rate limited — trust the stored value for the remaining rows.
-            console.warn("LeetCode API rate limit reached (429). Status checks paused.");
-            break;
-          }
-          console.warn("Live LeetCode status check failed for", student.name, err);
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-    };
-
-    verifyStaleStatuses();
-
-    return () => {
-      isMounted = false;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paginatedStudents]);
+  // NOTE: no live LeetCode re-check on page load. Status badges update only
+  // via the daily cron + the activity snapshot persisted at LeetCode session
+  // end (handleSessionEnded clears the permanent cache + refetches).
 
   const assignedUserIds = useMemo(
     () => new Set(safeAssignedStudents.map((s) => s.student_user_id || s.user_id || s.id)),
@@ -623,7 +641,7 @@ export default function Assigned({ onOpenExceptions }) {
     return [];
   }, [statsData.leetcode, selectedStudentForStats]);
 
-  if (loading) {
+  if (loading && assignedStudents.length === 0) {
     return (
       <div className="full-page-loader">
         <RefreshCw className="spin-icon" size={32} />
@@ -646,6 +664,7 @@ export default function Assigned({ onOpenExceptions }) {
         <LeetCodeSessionPanel
           squads={mentorSquads}
           assignedStudents={safeAssignedStudents}
+          onSessionEnded={handleSessionEnded}
         />
       </div>
 
