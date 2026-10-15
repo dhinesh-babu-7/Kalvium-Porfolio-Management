@@ -9,7 +9,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "UNLICENSED",
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
     "cors": "^2.8.6",

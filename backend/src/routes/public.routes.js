@@ -439,7 +439,9 @@ router.get("/leetcode-leaderboard", async (req, res) => {
                 score,
                 updated_at,
                 last_solved_at,
-                is_leetcode_active
+                is_leetcode_active,
+                is_under_review,
+                pending_review_count
             `)
             .order("score", { ascending: false });
 
@@ -476,34 +478,44 @@ router.get("/leetcode-leaderboard", async (req, res) => {
         });
 
         // ------------------------------------------
-        // 3. Filter out students with pending reviews
+        // 3. Get anti-cheat flags for flagged students
         // ------------------------------------------
 
-        const {
-            data: pendingSubmissions,
-        } = await supabase
-            .from("leetcode_submissions")
-            .select("user_id")
-            .eq("review_status", "pending");
+        const { data: antiCheatFlags, error: flagError } = await supabase
+            .from("anti_cheat_flags")
+            .select("student_id, status, flag_type, severity, detected_at")
+            .in("student_id", userIds)
+            .eq("status", "pending");
 
-        const pendingUserIds = new Set(
-            (pendingSubmissions || [])
-                .map(row => row.user_id)
-        );
+        if (flagError) {
+            console.error("Anti-cheat flags fetch error:", flagError);
+            // Continue without flag data
+        }
+
+        // Create a map of student_id -> most recent pending flag
+        const flagMap = {};
+        (antiCheatFlags || []).forEach(flag => {
+            if (!flagMap[flag.student_id] || new Date(flag.detected_at) > new Date(flagMap[flag.student_id].detected_at)) {
+                flagMap[flag.student_id] = flag;
+            }
+        });
 
         // ------------------------------------------
-        // 4. Merge leaderboard with profile data
+        // 4. Merge leaderboard with profile and flag data
         // ------------------------------------------
 
         const leaderboardWithProfiles = data
-            .map(entry => ({
-                ...entry,
-                profiles: profileMap[entry.user_id] || {}
-            }))
-            .filter(student => !pendingUserIds.has(student.user_id));
+            .map(entry => {
+                const antiCheatFlag = flagMap[entry.user_id];
+                return {
+                    ...entry,
+                    profiles: profileMap[entry.user_id] || {},
+                    anti_cheat_flag: antiCheatFlag || null
+                };
+            });
 
         // ------------------------------------------
-        // 5. Return clean leaderboard
+        // 5. Return leaderboard with all students
         // ------------------------------------------
 
         return res.status(200).json(leaderboardWithProfiles);

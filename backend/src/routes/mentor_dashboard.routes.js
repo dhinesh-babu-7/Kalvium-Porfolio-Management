@@ -1037,4 +1037,397 @@ router.patch(
   }
 );
 
+// ============================================================
+// ANTI-CHEAT SYSTEM ROUTES
+// ============================================================
+
+/**
+ * GET /anti-cheat/flags
+ * Get list of anti-cheat flags for mentor's students
+ * Supports filtering by status, severity, and search by name/username
+ */
+router.get("/anti-cheat/flags", requireAuth, reviewLimiter, async (req, res) => {
+  try {
+    const mentorUserId = req.user.id;
+    const db = req.adminSupabase;
+
+    // Get mentor's assigned students
+    const { students: assignedStudents } = await getMentorReviewStudents(
+      db,
+      mentorUserId
+    );
+
+    if (assignedStudents.length === 0) {
+      return res.status(200).json({
+        success: true,
+        flags: [],
+        summary: {
+          pending: 0,
+          cleared: 0,
+          confirmed: 0,
+          high: 0,
+          medium: 0,
+          low: 0,
+        },
+      });
+    }
+
+    const studentIds = assignedStudents
+      .map((s) => s.student_user_id)
+      .filter(Boolean);
+
+    // Query anti-cheat flags
+    let query = db
+      .from("anti_cheat_flags")
+      .select("*")
+      .in("student_id", studentIds)
+      .order("detected_at", { ascending: false });
+
+    // Apply filters
+    const { status, severity, search } = req.query;
+
+    if (status) {
+      query = query.eq("status", status);
+    }
+
+    if (severity) {
+      query = query.eq("severity", severity);
+    }
+
+    const { data: flags, error: flagError } = await query;
+
+    if (flagError) {
+      console.error("[ANTI-CHEAT FLAGS] Query error:", flagError);
+      return res.status(400).json({
+        success: false,
+        error: flagError.message,
+      });
+    }
+
+    // Apply search filter (client-side for now, can be optimized)
+    let filteredFlags = flags || [];
+
+    if (search) {
+      const searchLower = search.toLowerCase();
+      filteredFlags = filteredFlags.filter(
+        (flag) =>
+          flag.student_name?.toLowerCase().includes(searchLower) ||
+          flag.leetcode_username?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Get student details for flags
+    const studentIdsInFlags = [
+      ...new Set(filteredFlags.map((f) => f.student_id)),
+    ];
+
+    const { data: profiles, error: profileError } = studentIdsInFlags.length
+      ? await db
+          .from("profiles")
+          .select("user_id, name, avatar_url")
+          .in("user_id", studentIdsInFlags)
+      : { data: [], error: null };
+
+    if (profileError) {
+      console.error("[ANTI-CHEAT FLAGS] Profile fetch error:", profileError);
+      // Continue without profiles
+    }
+
+    const profileMap = {};
+    (profiles || []).forEach((p) => {
+      profileMap[p.user_id] = p;
+    });
+
+    // Enrich flags with profile data
+    const enrichedFlags = filteredFlags.map((flag) => ({
+      ...flag,
+      profile: profileMap[flag.student_id] || {},
+    }));
+
+    // Generate summary
+    const summary = {
+      pending: filteredFlags.filter((f) => f.status === "pending").length,
+      cleared: filteredFlags.filter((f) => f.status === "cleared").length,
+      confirmed: filteredFlags.filter((f) => f.status === "confirmed").length,
+      high: filteredFlags.filter((f) => f.severity === "high").length,
+      medium: filteredFlags.filter((f) => f.severity === "medium").length,
+      low: filteredFlags.filter((f) => f.severity === "low").length,
+    };
+
+    return res.status(200).json({
+      success: true,
+      flags: enrichedFlags,
+      summary,
+      total: enrichedFlags.length,
+    });
+  } catch (error) {
+    console.error("[ANTI-CHEAT FLAGS] Exception:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error",
+    });
+  }
+});
+
+/**
+ * GET /anti-cheat/flags/:studentUserId
+ * Get detailed information for a specific flag
+ */
+router.get("/anti-cheat/flags/:studentUserId", requireAuth, reviewLimiter, async (req, res) => {
+  try {
+    const { studentUserId } = req.params;
+    const mentorUserId = req.user.id;
+    const db = req.adminSupabase;
+
+    // Verify mentor can review this student
+    const canReview = await verifyMentorCanReviewStudent(
+      db,
+      mentorUserId,
+      studentUserId
+    );
+
+    if (!canReview) {
+      return res.status(403).json({
+        success: false,
+        error: "You are not authorized to review this student",
+      });
+    }
+
+    // Get all flags for this student (not just pending)
+    const { data: flags, error: flagError } = await db
+      .from("anti_cheat_flags")
+      .select("*")
+      .eq("student_id", studentUserId)
+      .order("detected_at", { ascending: false });
+
+    if (flagError) {
+      return res.status(400).json({
+        success: false,
+        error: flagError.message,
+      });
+    }
+
+    // Get student profile and leaderboard data
+    const [
+      { data: profile, error: profileError },
+      { data: leaderboard, error: leaderboardError },
+    ] = await Promise.all([
+      db
+        .from("profiles")
+        .select("user_id, name, avatar_url, leetcode")
+        .eq("user_id", studentUserId)
+        .maybeSingle(),
+      db
+        .from("leetcode_leaderboard")
+        .select("*")
+        .eq("user_id", studentUserId)
+        .maybeSingle(),
+    ]);
+
+    if (profileError || leaderboardError) {
+      const error = profileError || leaderboardError;
+      return res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
+    // Parse evidence JSON in flags
+    const enrichedFlags = (flags || []).map((flag) => ({
+      ...flag,
+      evidence: flag.evidence
+        ? typeof flag.evidence === "string"
+          ? JSON.parse(flag.evidence)
+          : flag.evidence
+        : {},
+    }));
+
+    return res.status(200).json({
+      success: true,
+      studentId: studentUserId,
+      profile: profile || {},
+      leaderboard: leaderboard || {},
+      flags: enrichedFlags,
+      totalFlags: enrichedFlags.length,
+      pendingFlags: enrichedFlags.filter((f) => f.status === "pending"),
+    });
+  } catch (error) {
+    console.error("[ANTI-CHEAT FLAG DETAILS] Exception:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error",
+    });
+  }
+});
+
+/**
+ * PATCH /anti-cheat/flags/:studentUserId/clear
+ * Clear an anti-cheat flag (mentor reviews and approves)
+ */
+router.patch(
+  "/anti-cheat/flags/:studentUserId/clear",
+  requireAuth,
+  reviewLimiter,
+  async (req, res) => {
+    try {
+      const { studentUserId } = req.params;
+      const { note } = req.body;
+      const mentorUserId = req.user.id;
+      const db = req.adminSupabase;
+
+      // Verify authorization
+      const canReview = await verifyMentorCanReviewStudent(
+        db,
+        mentorUserId,
+        studentUserId
+      );
+
+      if (!canReview) {
+        return res.status(403).json({
+          success: false,
+          error: "You are not authorized to review this student",
+        });
+      }
+
+      // Update pending flags to cleared
+      const { data: updated, error: updateError } = await db
+        .from("anti_cheat_flags")
+        .update({
+          status: "cleared",
+          mentor_id: mentorUserId,
+          mentor_note: note || null,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq("student_id", studentUserId)
+        .eq("status", "pending")
+        .select();
+
+      if (updateError) {
+        return res.status(400).json({
+          success: false,
+          error: updateError.message,
+        });
+      }
+
+      if (!updated || updated.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: "No pending flags found for this student",
+        });
+      }
+
+      // Update leaderboard to remove under-review status
+      const { error: leaderboardError } = await db
+        .from("leetcode_leaderboard")
+        .update({
+          is_under_review: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", studentUserId);
+
+      if (leaderboardError) {
+        console.error("[LEADERBOARD UPDATE ERROR]", leaderboardError);
+        // Continue - don't fail the entire request
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `${updated.length} flag(s) cleared successfully`,
+        clearedFlags: updated,
+      });
+    } catch (error) {
+      console.error("[CLEAR FLAG] Exception:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Internal server error",
+      });
+    }
+  }
+);
+
+/**
+ * PATCH /anti-cheat/flags/:studentUserId/confirm
+ * Confirm an anti-cheat violation
+ */
+router.patch(
+  "/anti-cheat/flags/:studentUserId/confirm",
+  requireAuth,
+  reviewLimiter,
+  async (req, res) => {
+    try {
+      const { studentUserId } = req.params;
+      const { note } = req.body;
+      const mentorUserId = req.user.id;
+      const db = req.adminSupabase;
+
+      // Verify authorization
+      const canReview = await verifyMentorCanReviewStudent(
+        db,
+        mentorUserId,
+        studentUserId
+      );
+
+      if (!canReview) {
+        return res.status(403).json({
+          success: false,
+          error: "You are not authorized to review this student",
+        });
+      }
+
+      // Update pending flags to confirmed
+      const { data: updated, error: updateError } = await db
+        .from("anti_cheat_flags")
+        .update({
+          status: "confirmed",
+          mentor_id: mentorUserId,
+          mentor_note: note || null,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq("student_id", studentUserId)
+        .eq("status", "pending")
+        .select();
+
+      if (updateError) {
+        return res.status(400).json({
+          success: false,
+          error: updateError.message,
+        });
+      }
+
+      if (!updated || updated.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: "No pending flags found for this student",
+        });
+      }
+
+      // Keep student under review (stays at bottom of leaderboard)
+      const { error: leaderboardError } = await db
+        .from("leetcode_leaderboard")
+        .update({
+          is_under_review: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", studentUserId);
+
+      if (leaderboardError) {
+        console.error("[LEADERBOARD UPDATE ERROR]", leaderboardError);
+        // Continue - don't fail the entire request
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `${updated.length} flag(s) confirmed successfully`,
+        confirmedFlags: updated,
+      });
+    } catch (error) {
+      console.error("[CONFIRM FLAG] Exception:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Internal server error",
+      });
+    }
+  }
+);
+
 export default router;

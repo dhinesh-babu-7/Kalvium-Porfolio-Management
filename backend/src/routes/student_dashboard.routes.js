@@ -168,7 +168,11 @@ router.get(
         .select(`
           leetcode_username,
           total_solved,
-          is_suspended
+          is_suspended,
+          is_under_review,
+          pending_review_count,
+          ranking,
+          score
         `)
         .eq(
           "user_id",
@@ -213,6 +217,22 @@ router.get(
           is_suspended:
             leaderboardData
               ?.is_suspended || false,
+
+          is_under_review:
+            leaderboardData
+              ?.is_under_review || false,
+
+          pending_review_count:
+            leaderboardData
+              ?.pending_review_count || 0,
+
+          ranking:
+            leaderboardData
+              ?.ranking || null,
+
+          score:
+            leaderboardData
+              ?.score || 0,
         },
       });
     } catch (error) {

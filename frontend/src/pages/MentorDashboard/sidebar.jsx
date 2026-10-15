@@ -8,6 +8,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 
 import kalviumLogo from "../../assets/kalvium-logo.svg";
@@ -15,11 +16,12 @@ import { supabase } from "../../lib/supabase";
 import "./mentordashboard.css";
 import "./sidebar.css";
 
-// Added "Assigned" to the navigation array
+// Added "Anti-Cheat Review" to the navigation array
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Assigned", icon: Users },
   { label: "Mentor Review", icon: ShieldCheck },
+  { label: "Anti-Cheat Review", icon: AlertTriangle },
   { label: "Settings", icon: Settings },
 ];
 

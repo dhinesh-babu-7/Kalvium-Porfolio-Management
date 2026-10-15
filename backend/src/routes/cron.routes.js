@@ -1,5 +1,10 @@
 import express from "express";
 import { supabaseAdmin } from "../config/supabase.js";
+import {
+  runAntiCheatChecks,
+  formatDetectionAsFlag,
+  detectRapidSubmissions,
+} from "../services/antiCheatService.js";
 
 const router = express.Router();
 
@@ -77,6 +82,261 @@ const logSupabaseError = (context, error, extra = {}) => {
 
   console.error("-----------------------------------------------");
 };
+
+// ============================================================
+// ANTI-CHEAT HELPERS
+// ============================================================
+
+/**
+ * Get the most recent LeetCode sync history for a student
+ */
+async function getPreviousSyncHistory(userId) {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("leetcode_sync_history")
+      .select("*")
+      .eq("student_id", userId)
+      .order("synced_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+      // PGRST116 is "no rows" error, which is fine
+      logSupabaseError("Getting previous sync history", error, { userId });
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error("[SYNC HISTORY FETCH ERROR]", error.message);
+    return null;
+  }
+}
+
+/**
+ * Save new LeetCode sync history
+ */
+async function saveSyncHistory(userId, username, currentStats, syncedAt) {
+  try {
+    const { error } = await supabaseAdmin
+      .from("leetcode_sync_history")
+      .insert([
+        {
+          student_id: userId,
+          leetcode_username: username,
+          easy_solved: Number(currentStats.easy_solved || 0),
+          medium_solved: Number(currentStats.medium_solved || 0),
+          hard_solved: Number(currentStats.hard_solved || 0),
+          total_solved: Number(currentStats.total_solved || 0),
+          score: Number(currentStats.score || 0),
+          leetcode_ranking: currentStats.ranking || null,
+          synced_at: syncedAt,
+        },
+      ]);
+
+    if (error) {
+      logSupabaseError("Saving sync history", error, {
+        userId,
+        username,
+      });
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("[SYNC HISTORY SAVE ERROR]", error.message);
+    return false;
+  }
+}
+
+/**
+ * Check if a flag already exists for this sync event (duplicate protection)
+ */
+async function checkDuplicateFlag(userId, flagType, detectionTime, leetcodeSubmissionId = null) {
+  try {
+    const { data: existingFlags, error } = await supabaseAdmin
+      .from("anti_cheat_flags")
+      .select("id, status, evidence")
+      .eq("student_id", userId)
+      .eq("flag_type", flagType)
+      .eq("status", "pending");
+
+    if (error) {
+      logSupabaseError("Checking duplicate flags", error, {
+        userId,
+        flagType,
+      });
+      return false;
+    }
+
+    if (leetcodeSubmissionId) {
+      const hasSameSubmission = (existingFlags || []).some((flag) => {
+        const evidence = flag.evidence || {};
+        const candidateId = evidence.leetcode_submission_id || evidence.submissionId || evidence.submission_id;
+        return String(candidateId) === String(leetcodeSubmissionId);
+      });
+
+      if (hasSameSubmission) {
+        console.log(
+          `[DUPLICATE PROTECTION] ${userId} | LeetCode submission ${leetcodeSubmissionId} already flagged pending`
+        );
+        return true;
+      }
+    }
+
+    if (existingFlags && existingFlags.length > 0) {
+      console.log(
+        `[DUPLICATE PROTECTION] ${userId} | Flag type "${flagType}" already pending`
+      );
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error("[DUPLICATE CHECK ERROR]", error.message);
+    return false;
+  }
+}
+
+/**
+ * Create an anti-cheat flag
+ */
+async function createAntiCheatFlag(userId, studentName, username, detection, leetcodeSubmissionId = null) {
+  try {
+    const isDuplicate = await checkDuplicateFlag(
+      userId,
+      detection.flagType,
+      new Date(),
+      leetcodeSubmissionId
+    );
+    if (isDuplicate) {
+      console.log(
+        `[ANTI-CHEAT] ${username} | Skipping duplicate flag creation`
+      );
+      return false;
+    }
+
+    const flagData = formatDetectionAsFlag(
+      detection,
+      userId,
+      studentName,
+      username
+    );
+
+    if (leetcodeSubmissionId) {
+      flagData.evidence = JSON.stringify({
+        ...(typeof detection.evidence === "string" ? JSON.parse(detection.evidence) : detection.evidence || {}),
+        leetcode_submission_id: String(leetcodeSubmissionId),
+      });
+    }
+
+    const { error } = await supabaseAdmin
+      .from("anti_cheat_flags")
+      .insert([flagData]);
+
+    if (error) {
+      logSupabaseError("Creating anti-cheat flag", error, {
+        userId,
+        username,
+        flagType: detection.flagType,
+      });
+      return false;
+    }
+
+    console.log(
+      `[ANTI-CHEAT FLAG CREATED] ${username} | Type: ${detection.flagType} | Severity: ${detection.severity}`
+    );
+    return true;
+  } catch (error) {
+    console.error("[FLAG CREATION ERROR]", error.message);
+    return false;
+  }
+}
+
+/**
+ * Run anti-cheat detection and create flags if needed
+ */
+async function runAntiCheatDetection(
+  userId,
+  username,
+  studentName,
+  previousSnapshot,
+  currentStats,
+  recentSubmissions = []
+) {
+  try {
+    if (!previousSnapshot && (!recentSubmissions || recentSubmissions.length === 0)) {
+      console.log(
+        `[ANTI-CHEAT] ${username} | First sync, no history to compare. Skipping checks.`
+      );
+      return { created: false, flagCount: 0 };
+    }
+
+    const previousSyncTime = previousSnapshot ? new Date(previousSnapshot.synced_at) : null;
+    const currentSyncTime = new Date();
+    const timeDifferenceMinutes = previousSyncTime
+      ? (currentSyncTime - previousSyncTime) / (1000 * 60)
+      : null;
+
+    if (previousSyncTime) {
+      console.log(
+        `[ANTI-CHEAT] ${username} | ` +
+          `Time since last sync: ${Math.round(timeDifferenceMinutes)} minutes`
+      );
+    }
+
+    const rapidSubmissionData = Array.isArray(recentSubmissions) && recentSubmissions.length > 1
+      ? recentSubmissions
+          .map((submission) => ({
+            id: submission.id,
+            title: submission.title,
+            titleSlug: submission.titleSlug,
+            timestamp: String(submission.timestamp),
+            difficulty: submission.difficulty || "Unknown",
+          }))
+      : null;
+
+    const detections = runAntiCheatChecks(
+      previousSnapshot,
+      currentStats,
+      timeDifferenceMinutes,
+      rapidSubmissionData
+    );
+
+    if (detections.length === 0) {
+      console.log(`[ANTI-CHEAT] ${username} | No suspicious activity detected`);
+      return { created: false, flagCount: 0 };
+    }
+
+    console.log(
+      `[ANTI-CHEAT] ${username} | Found ${detections.length} suspicious pattern(s)`
+    );
+
+    let flagCount = 0;
+
+    for (const detection of detections) {
+      const recentSubmissionId = rapidSubmissionData && detection.evidence?.currentSubmissionTime
+        ? rapidSubmissionData[rapidSubmissionData.length - 1]?.id
+        : null;
+
+      const created = await createAntiCheatFlag(
+        userId,
+        studentName,
+        username,
+        detection,
+        recentSubmissionId
+      );
+      if (created) {
+        flagCount++;
+      }
+    }
+
+    return { created: flagCount > 0, flagCount };
+  } catch (error) {
+    console.error("[ANTI-CHEAT DETECTION ERROR]", error.message);
+    return { created: false, flagCount: 0 };
+  }
+}
 
 // ============================================================
 // FIND RAPID SUBMISSIONS
@@ -250,22 +510,37 @@ async function saveLeetCodeSubmissions(userId, username, submissions) {
 
 async function updateLeaderboardSuspensionStatus(userId, profileId) {
   try {
-    const { count: pendingCount, error: pendingError } = await supabaseAdmin
-      .from("leetcode_submissions")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .ilike("review_status", "pending");
+    const [
+      { count: pendingSubmissionCount, error: pendingSubmissionError },
+      { count: pendingFlagCount, error: pendingFlagError },
+    ] = await Promise.all([
+      supabaseAdmin
+        .from("leetcode_submissions")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .ilike("review_status", "pending"),
+      supabaseAdmin
+        .from("anti_cheat_flags")
+        .select("*", { count: "exact", head: true })
+        .eq("student_id", userId)
+        .eq("status", "pending"),
+    ]);
 
-    if (pendingError) {
-      logSupabaseError("Suspension check failed", pendingError, {
+    if (pendingSubmissionError) {
+      logSupabaseError("Submission review check failed", pendingSubmissionError, {
         userId,
         profileId,
       });
-
-      return false;
     }
 
-    const pendingReviewCount = Number(pendingCount || 0);
+    if (pendingFlagError) {
+      logSupabaseError("Anti-cheat review check failed", pendingFlagError, {
+        userId,
+        profileId,
+      });
+    }
+
+    const pendingReviewCount = Number(pendingSubmissionCount || 0) + Number(pendingFlagCount || 0);
     const hasPendingReviews = pendingReviewCount > 0;
 
     const { error: updateError } = await supabaseAdmin
@@ -282,6 +557,7 @@ async function updateLeaderboardSuspensionStatus(userId, profileId) {
         userId,
         profileId,
         hasPendingReviews,
+        pendingReviewCount,
       });
 
       return false;
@@ -1248,6 +1524,72 @@ async function syncSingleLeetCodeProfile(
           `is_under_review=${hasPendingReviews}`,
       );
 
+      // ============================================================
+      // ANTI-CHEAT DETECTION
+      // ============================================================
+
+      // Get student name for flag creation
+      const { data: profileData, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("name")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      const studentName = profileData?.name || username;
+
+      // Get previous sync history
+      const previousSnapshot = await getPreviousSyncHistory(userId);
+
+      // Current stats for anti-cheat check
+      const currentStats = {
+        easy_solved: easySolved,
+        medium_solved: mediumSolved,
+        hard_solved: hardSolved,
+        total_solved: totalSolved,
+        score,
+        ranking,
+      };
+
+      // Run anti-cheat detection
+      const antiCheatResult = await runAntiCheatDetection(
+        userId,
+        username,
+        studentName,
+        previousSnapshot,
+        currentStats,
+        recentSubmissions
+      );
+
+      // Save sync history for next sync comparison
+      const syncHistorySaved = await saveSyncHistory(
+        userId,
+        username,
+        currentStats,
+        new Date().toISOString()
+      );
+
+      if (!syncHistorySaved) {
+        console.warn(
+          `[ANTI-CHEAT] ${username} | Failed to save sync history`
+        );
+      }
+
+      // If anti-cheat flags were created, mark student as under review
+      let isUnderAntiCheatReview = false;
+      if (antiCheatResult.flagCount > 0) {
+        isUnderAntiCheatReview = true;
+        console.log(
+          `[ANTI-CHEAT RESULT] ${username} | ${antiCheatResult.flagCount} flag(s) created`
+        );
+      }
+
+      // Ensure review state incorporates both pending submissions and anti-cheat flags
+      await updateLeaderboardSuspensionStatus(userId, profileId);
+
+      // ============================================================
+      // PREPARE LEADERBOARD UPSERT
+      // ============================================================
+
       const upsertPayload = {
         profile_id: profileId,
         user_id: userId,
@@ -1262,7 +1604,7 @@ async function syncSingleLeetCodeProfile(
         last_solved_at: lastSolvedAt,
         is_leetcode_active: isLeetCodeActive,
         pending_review_count: pendingReviewCount,
-        is_under_review: hasPendingReviews,
+        is_under_review: hasPendingReviews || isUnderAntiCheatReview,
       };
 
       console.log(`[DB UPSERT] ${username} | Updating leetcode_leaderboard...`);

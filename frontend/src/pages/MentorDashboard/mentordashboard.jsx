@@ -7,6 +7,7 @@ import DashboardContent from "./dashboardcontent";
 import SettingsContent from "./settingsconetnt";
 import Assigned from "./Assigned";
 import MentorReview from "./MentorReview";
+import AntiCheatReview from "./AntiCheatReview";
 
 import "./mentordashboard.css";
 
@@ -74,6 +75,10 @@ const MentorDashboard = ({ profile, isLoading = false }) => {
 
           {activeNav === "Mentor Review" && (
             <MentorReview profile={profile} />
+          )}
+
+          {activeNav === "Anti-Cheat Review" && (
+            <AntiCheatReview />
           )}
 
           {activeNav === "Settings" && (
