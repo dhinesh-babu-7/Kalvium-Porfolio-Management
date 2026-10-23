@@ -13,11 +13,9 @@ import {
   Award,
   BookOpen,
   Target,
-  BadgeCheck,
-  CalendarCheck
+  BadgeCheck
 } from "lucide-react";
 import { getGitHubStats, getLeetCodeStats } from "../../api/routes/StudentDashboard/dashboard";
-import { ATTEND_FLOW_URL } from "../MentorDashboard/dashboardRoutes.js";
 import { getMyExceptionRequests } from "../../api/routes/StudentDashboard/exception";
 import { getLeaderboardData } from "../../api/routes/Public/leaderboard";
 import RequestException from "./RequestException";
@@ -562,31 +560,6 @@ export default function DashboardTab({ profile, fileName, isLoading }) {
               <span className="dt-activity-tag"><BadgeCheck size={14} /> Request accepted</span>
             )}
           </div>
-
-          {/* AttendFlow — attendance tracking shortcut (opens in a new tab) */}
-          <a
-            className="dt-attend-card"
-            href={ATTEND_FLOW_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Open AttendFlow in a new tab"
-          >
-            <div className="dt-attend-card-header">
-              <div>
-                <span className="dt-section-eyebrow">Attendance</span>
-                <h3>AttendFlow</h3>
-              </div>
-              <span className="dt-activity-icon"><CalendarCheck size={18} /></span>
-            </div>
-            <p className="dt-activity-value">Mark Attendance</p>
-            <span className="dt-activity-description">
-              Open AttendFlow to mark and track your attendance.
-            </span>
-            <span className="dt-attend-cta">
-              Open AttendFlow
-              <Link2 size={14} />
-            </span>
-          </a>
 
           <RequestException />
         </div>

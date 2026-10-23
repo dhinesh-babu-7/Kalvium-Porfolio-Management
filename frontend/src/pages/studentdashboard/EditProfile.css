@@ -973,7 +973,8 @@ a.pm-nav-item {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       "brand logout"
-      "nav nav";
+      "nav nav"
+      "quick quick";
     align-items: center;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
   }
@@ -1004,12 +1005,21 @@ a.pm-nav-item {
     display: none;
   }
 
+  .pm-nav-quick {
+    grid-area: quick;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
   /* Hamburger menu: nav rows stay hidden until .pm-sidebar.is-mobile-open. */
-  .pm-sidebar .pm-nav {
+  .pm-sidebar .pm-nav,
+  .pm-sidebar .pm-nav-quick {
     display: none;
   }
 
-  .pm-sidebar.is-mobile-open .pm-nav {
+  .pm-sidebar.is-mobile-open .pm-nav,
+  .pm-sidebar.is-mobile-open .pm-nav-quick {
     display: flex;
   }
 
