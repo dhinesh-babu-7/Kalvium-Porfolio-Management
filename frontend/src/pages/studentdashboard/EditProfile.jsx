@@ -27,7 +27,8 @@ import {
   Copy,
   Check,
   Clock,
-  Sparkles
+  Sparkles,
+  CalendarCheck
 } from "lucide-react";
 
 import { supabase } from "../../lib/supabase.js";
@@ -39,7 +40,7 @@ import DashboardTab from "./DashboardTab.jsx";
 import { getProfile, updateProfile } from "../../api/routes/StudentDashboard/profile.js";
 import Projects from "./Projects.jsx";
 import AchievementsTab from "./AchievementsTab.jsx";
-import { studentLabelToSlug, studentSlugToLabel, studentTabPath } from "../MentorDashboard/dashboardRoutes.js";
+import { studentLabelToSlug, studentSlugToLabel, studentTabPath, ATTEND_FLOW_URL } from "../MentorDashboard/dashboardRoutes.js";
 
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard },
@@ -501,6 +502,26 @@ export default function ProfileTab({
                 {!isCollapsed && <span>{label}</span>}
               </button>
             ))}
+          </nav>
+
+          {/* Secondary section: direct links to external student tools */}
+          <nav className="pm-nav pm-nav-quick" aria-label="Quick Access">
+            {!isCollapsed && (
+              <span className="pm-nav-section-title">Quick Access</span>
+            )}
+            <a
+              className="pm-nav-item"
+              href={ATTEND_FLOW_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={isCollapsed ? "AttendFlow (opens in a new tab)" : ""}
+              onClick={() => {
+                if (isMobile) setMobileOpen(false);
+              }}
+            >
+              <CalendarCheck size={18} strokeWidth={2} />
+              {!isCollapsed && <span>AttendFlow</span>}
+            </a>
           </nav>
 
           <button

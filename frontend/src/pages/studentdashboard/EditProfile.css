@@ -353,6 +353,36 @@ html, body {
   background: var(--pm-red-light);
 }
 
+/* ==========================================
+   SIDEBAR: QUICK ACCESS SECTION (AttendFlow)
+   Mirrors the mentor dashboard Quick Access
+   so the AttendFlow shortcut reads as part of
+   the sidebar rather than an add-on.
+   ========================================== */
+.pm-nav-section-title {
+  display: block;
+  padding: 4px 12px 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--pm-text-faint);
+}
+
+.pm-sidebar.is-collapsed .pm-nav-section-title {
+  display: none;
+}
+
+.pm-nav-quick {
+  padding-top: 6px;
+  border-top: 1px solid var(--pm-border);
+}
+
+/* Quick Access entries are external links rendered with pm-nav-item. */
+a.pm-nav-item {
+  text-decoration: none;
+}
+
 /* Main Workspace */
 .pm-main {
   margin-left: 240px;
