@@ -649,6 +649,37 @@
   100% { background-position: -200% 0; }
 }
 
+/* Monthly Consistency Section */
+.dt-monthly-section {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+}
+
+.dt-monthly-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.dt-monthly-header .dt-section-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.dt-monthly-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
 /* Mobile Overrides */
 @media (max-width: 640px) {
   .dt-container {

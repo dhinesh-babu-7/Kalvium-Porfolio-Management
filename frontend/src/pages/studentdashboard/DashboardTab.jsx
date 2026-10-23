@@ -19,6 +19,7 @@ import { getGitHubStats, getLeetCodeStats } from "../../api/routes/StudentDashbo
 import { getMyExceptionRequests } from "../../api/routes/StudentDashboard/exception";
 import { getLeaderboardData } from "../../api/routes/Public/leaderboard";
 import RequestException from "./RequestException";
+import MonthlyActivityGraph from "./MonthlyActivityGraph";
 import "./RequestException.css";
 import {
   isRecentlyActive,
@@ -36,7 +37,6 @@ function useDashboardStats(githubUrl, leetcodeUrl, profile) {
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [hasAcceptedException, setHasAcceptedException] = useState(false);
   const [acceptedUntil, setAcceptedUntil] = useState(null);
-
   useEffect(() => {
     if (!profile) return;
     let isMounted = true;
@@ -140,11 +140,14 @@ export default function DashboardTab({ profile, fileName, isLoading }) {
   }, [profile]);
 
   // Hook: Fetch GitHub & LeetCode stats
-  const { githubData, leetcodeData, websiteLeaderboard, isStatsLoading, hasAcceptedException, acceptedUntil } = useDashboardStats(
-    githubUrl,
-    leetcodeUrl,
-    profile
-  );
+  const {
+    githubData,
+    leetcodeData,
+    websiteLeaderboard,
+    isStatsLoading,
+    hasAcceptedException,
+    acceptedUntil
+  } = useDashboardStats(githubUrl, leetcodeUrl, profile);
 
   const leaderboardRows = useMemo(() => {
     const sortedLeaderboard = [...websiteLeaderboard].sort((left, right) => {
@@ -496,6 +499,17 @@ export default function DashboardTab({ profile, fileName, isLoading }) {
         ) : (
           <p className="dt-leaderboard-empty">Your profile is not ranked yet.</p>
         )}
+        </section>
+
+        {/* Monthly Consistency Overview */}
+        <section className="dt-monthly-section" aria-labelledby="monthly-consistency-heading">
+          <div className="dt-monthly-header">
+            <div>
+              <span className="dt-section-eyebrow">Monthly Consistency</span>
+              <h3 id="monthly-consistency-heading">Your LeetCode consistency</h3>
+            </div>
+          </div>
+          <MonthlyActivityGraph />
         </section>
 
         <div className="dt-dashboard-bottom-grid">

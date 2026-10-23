@@ -2197,9 +2197,65 @@ router.get("/student-monthly-activity/:studentUserId", requireAuth, requireMento
         return { start, end };
       }).filter(Boolean);
     } catch { windows = []; }
+
+    // --- LeetCode monitor-session coverage for this student's squads ---
+    // A day with an active monitor session counts as tracked even when
+    // the student solved nothing that day.
+    let studentSquadIds = [];
+    try {
+      const { data: ssRows, error: ssErr } = await supabaseAdmin
+        .from("squad_students")
+        .select("squad_id")
+        .eq("student_user_id", String(studentUserId));
+      if (ssErr) throw ssErr;
+      studentSquadIds = [
+        ...new Set(
+          (ssRows || [])
+            .map((r) => String(r.squad_id))
+            .filter(Boolean)
+        ),
+      ];
+    } catch { studentSquadIds = []; }
+
+    const sessionDates = new Set();
+    if (studentSquadIds.length > 0) {
+      try {
+        const { data: sessions, error: sesErr } = await supabaseAdmin
+          .from("mentor_leetcode_sessions")
+          .select("started_at, ended_at, squad_ids");
+        if (sesErr) throw sesErr;
+        for (const s of sessions || []) {
+          const started = String(s.started_at || "").slice(0, 10);
+          const ended = String(s.ended_at || "").slice(0, 10) || null;
+          if (!started) continue;
+          const squadIds = Array.isArray(s.squad_ids)
+            ? s.squad_ids.map(String)
+            : [];
+          const hasOverlap = studentSquadIds.some((id) => squadIds.includes(id));
+          if (!hasOverlap) continue;
+          let cursor = new Date(Date.UTC(...started.split("-").map(Number)));
+          const endDate = ended
+            ? new Date(Date.UTC(...ended.split("-").map(Number)))
+            : new Date();
+          while (cursor <= endDate) {
+            const ds = cursor.toISOString().slice(0, 10);
+            if (ds >= monthStart && ds <= monthEnd) sessionDates.add(ds);
+            cursor = new Date(
+              Date.UTC(
+                cursor.getUTCFullYear(),
+                cursor.getUTCMonth(),
+                cursor.getUTCDate() + 1
+              )
+            );
+          }
+        }
+      } catch { sessionDates.clear(); }
+    }
+
     const days = [];
     let completedDays = 0;
     let missedDays = 0;
+    let sessionDays = 0;
     let exceptionDays = 0;
     let totalSolvedThisMonth = 0;
     for (let d = 1; d <= daysInMonth; d++) {
@@ -2207,21 +2263,23 @@ router.get("/student-monthly-activity/:studentUserId", requireAuth, requireMento
       const snap = snapshotByDate[dateStr];
       const solved = Number(snap?.solved_count) || 0;
       const exc = Boolean(snap?.had_exception) || windows.some((w) => w.start <= dateStr && dateStr <= w.end);
+      const onSession = sessionDates.has(dateStr);
       let status;
       if (dateStr > istTodayStr) { status = "future"; }
       else if (exc) { status = "exception"; exceptionDays++; }
       else if (solved > 0 || snap?.did_solve) { status = "completed"; completedDays++; }
+      else if (onSession) { status = "session"; sessionDays++; }
       else { status = "missed"; missedDays++; }
       totalSolvedThisMonth += solved;
       days.push({
         date: dateStr, day: d, solved_count: solved,
         total_solved: snap ? Number(snap.total_solved) || 0 : null,
-        has_snapshot: Boolean(snap), had_exception: exc, status,
+        has_snapshot: Boolean(snap), had_exception: exc, had_session: onSession, status,
       });
     }
     return res.status(200).json({
       student_user_id: String(studentUserId), month: monthStr,
-      summary: { completedDays, missedDays, exceptionDays, totalSolvedThisMonth, daysTracked: Object.keys(snapshotByDate).length },
+      summary: { completedDays, missedDays, sessionDays, exceptionDays, totalSolvedThisMonth, daysTracked: Object.keys(snapshotByDate).length },
       days,
     });
   } catch (err) {
