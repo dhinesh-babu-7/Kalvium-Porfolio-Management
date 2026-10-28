@@ -426,7 +426,7 @@ body {
 .responsive-table {
   width: 100%;
   border-collapse: collapse;
-  text-align: left;
+  text-align: center;
 }
 
 .responsive-table th {
@@ -446,6 +446,7 @@ body {
   border-bottom: 1px solid var(--kalvium-border);
   vertical-align: middle;
   white-space: nowrap;
+  text-align: center;
 }
 
 .responsive-table tbody tr {
@@ -458,9 +459,9 @@ body {
 
 .actions-cell {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start;
   white-space: nowrap;
 }
 
