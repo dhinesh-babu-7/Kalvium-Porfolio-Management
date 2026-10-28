@@ -897,7 +897,7 @@ export default function Assigned({ onOpenExceptions }) {
                 <th>Squad</th>
                 <th>LeetCode Activity</th>
                 <th>Platforms</th>
-                <th className="text-right">Actions</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
