@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -10,6 +10,7 @@ import {
   Eye,
   FileWarning,
   Activity,
+  BookOpenCheck,
   Menu,
   X,
   CalendarCheck,
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Overview", icon: Eye },
   { label: "Assigned", icon: Users },
+  { label: "Practice Progress", icon: BookOpenCheck },
   { label: "Exception Requests", icon: FileWarning },
   { label: "Settings", icon: Settings },
   { label: "LeetCode", icon: Activity },

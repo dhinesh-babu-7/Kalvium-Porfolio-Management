@@ -9,6 +9,7 @@ import SettingsContent from "./settingsconetnt";
 import Assigned from "./Assigned";
 import ExceptionRequests from "./ExceptionRequests";
 import LeetCodeSessionPanel from "./LeetCodeSessionPanel";
+import PracticeProgress from "./PracticeProgress.jsx";
 
 import { getSquads } from "../../api/routes/MentorDashboard/main.js";
 
@@ -133,6 +134,10 @@ const MentorDashboard = ({ profile, isLoading = false }) => {
 
           {activeNav === "LeetCode" && (
             <LeetCodeSessionPanel />
+          )}
+
+          {activeNav === "Practice Progress" && (
+            <PracticeProgress />
           )}
 
         </div>
