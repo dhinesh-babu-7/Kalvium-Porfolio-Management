@@ -47,11 +47,12 @@ export function mentorTabPath(slug) {
   return safe === DEFAULT_TAB ? MENTOR_BASE : `${MENTOR_BASE}/${safe}`;
 }
 
-export const STUDENT_TABS = ["dashboard", "profile", "projects", "achievements", "settings"];
+export const STUDENT_TABS = ["dashboard", "profile", "practise", "projects", "achievements", "settings"];
 
 export const STUDENT_TAB_LABELS = {
   dashboard: "Dashboard",
   profile: "Profile",
+  practise: "Practise",
   projects: "Projects",
   achievements: "Achievements",
   settings: "Settings",

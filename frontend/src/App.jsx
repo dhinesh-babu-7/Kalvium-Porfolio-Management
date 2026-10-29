@@ -97,6 +97,16 @@ function App() {
           }
         />
         <Route
+          path="/student/dashboard/:tab/belt/:beltId"
+          element={
+            <AuthGate allowedRoles={["student"]}>
+              <TabGuard allowed={STUDENT_TAB_SET} fallback={STUDENT_HOME}>
+                <EditProfile />
+              </TabGuard>
+            </AuthGate>
+          }
+        />
+        <Route
           path="/student/dashboard/:tab"
           element={
             <AuthGate allowedRoles={["student"]}>

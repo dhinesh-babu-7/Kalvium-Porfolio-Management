@@ -40,11 +40,14 @@ import DashboardTab from "./DashboardTab.jsx";
 import { getProfile, updateProfile } from "../../api/routes/StudentDashboard/profile.js";
 import Projects from "./Projects.jsx";
 import AchievementsTab from "./AchievementsTab.jsx";
+import Practise from "./practise.jsx";
+import BeltRoutes from "./BeltRoutes.jsx";
 import { studentLabelToSlug, studentSlugToLabel, studentTabPath, ATTEND_FLOW_URL } from "../MentorDashboard/dashboardRoutes.js";
 
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Profile", icon: User },
+  { label: "Practise", icon: Code2 },
   { label: "Projects", icon: FolderKanban },
   { label: "Achievements", icon: Trophy },
   { label: "Settings", icon: Settings },
@@ -71,7 +74,7 @@ export default function ProfileTab({
   isLoading: initialLoading = false,
   onProfileChange
 }) {
-  const { tab } = useParams();
+  const { tab, beltId } = useParams();
   const navigate = useNavigate();
   // URL is the source of truth: back/forward + deep links always render the
   // right tab with zero local-state sync effects.
@@ -565,9 +568,11 @@ export default function ProfileTab({
                   ? "Dashboard Overview"
                   : activeNav === "Profile"
                     ? "Student Profile"
-                    : activeNav === "Settings" 
+                    : activeNav === "Settings"
                       ? "Account Settings"
-                    : null}
+                      : activeNav === "Practise"
+                        ? "Practise"
+                        : null}
               </h1>
             </div>
           </div>
@@ -831,6 +836,12 @@ export default function ProfileTab({
             {activeNav === "Projects" && (
               <div className="pm-tab-full">
                 <Projects></Projects>
+              </div>
+            )}
+
+            {activeNav === "Practise" && (
+              <div className="pm-tab-full">
+                {beltId ? <BeltRoutes /> : <Practise />}
               </div>
             )}
 
