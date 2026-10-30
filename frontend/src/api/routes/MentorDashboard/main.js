@@ -132,6 +132,29 @@ export async function getAssignedStudents() {
   }
 }
 
+export async function getPracticeProgress() {
+  const token = await jwt();
+  if (!token) {
+    throw new Error("No active session found. Please sign in again.");
+  }
+
+  try {
+    const response = await apiClient.get("/mentor/dashboard/practice-progress", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error(
+      "Error fetching assigned student practice progress:",
+      error?.response?.data || error.message
+    );
+    throw error;
+  }
+}
+
 /**
  * Monthly consistency graph source. Reads daily snapshots for YYYY-MM.
  * @param {string|number} studentUserId
