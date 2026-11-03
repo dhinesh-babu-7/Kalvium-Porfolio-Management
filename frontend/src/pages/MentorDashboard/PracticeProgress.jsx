@@ -30,29 +30,46 @@ function getErrorMessage(error) {
   return error?.message || "Could not load practice progress. Please try again.";
 }
 
-function getProgressByTopic(student) {
-  return new Map((student.progress || []).map((row) => [row.topic_id, row]));
+function getTopicProgress(student) {
+  const progress = student.progress?.topic_progress;
+  return progress && typeof progress === "object" && !Array.isArray(progress)
+    ? progress
+    : {};
 }
 
-function getSolvedProblemIndexes(row, problemCount) {
+function getSolvedProblemIndexes(student, topic) {
+  const topicProgress = student.progress?.problem_progress?.[topic.id];
+  if (!topicProgress || typeof topicProgress !== "object" || Array.isArray(topicProgress)) {
+    return new Set();
+  }
+
+  const problemIds = new Map(topic.resources
+    .filter((resource) => resource.title.startsWith("Practice"))
+    .map((resource) => {
+      const match = resource.url.match(/\/problems\/([^/?#]+)/);
+      return match?.[1] || null;
+    })
+    .map((problemId, index) => [problemId, index])
+    .filter(([problemId]) => problemId !== null));
+
   return new Set(
-    (Array.isArray(row?.solved_problems) ? row.solved_problems : [])
-      .map(Number)
-      .filter((index) => Number.isInteger(index) && index >= 0 && index < problemCount)
+    Object.entries(topicProgress)
+      .filter(([problemId, solved]) => solved === true && problemIds.has(problemId))
+      .map(([problemId]) => problemIds.get(problemId))
   );
 }
 
 function getBeltStats(student, belt) {
-  const progressByTopic = getProgressByTopic(student);
+  const topicProgress = getTopicProgress(student);
   let solvedProblems = 0;
   let totalProblems = 0;
   let completedTopics = 0;
 
   for (const topic of belt.topics) {
-    const row = progressByTopic.get(topic.id);
-    solvedProblems += getSolvedProblemIndexes(row, topic.problems.length).size;
+    const topicStatus = topicProgress[topic.id];
+    solvedProblems += getSolvedProblemIndexes(student, topic).size;
     totalProblems += topic.problems.length;
-    if (row?.completed === true) completedTopics += 1;
+    if (topicStatus?.completed === true) completedTopics += 1;
   }
 
   return {
@@ -65,14 +82,13 @@ function getBeltStats(student, belt) {
 }
 
 function getCurrentBelt(student) {
-  const progressByTopic = getProgressByTopic(student);
+  const topicProgress = getTopicProgress(student);
   return BELTS.find((belt) =>
-    !belt.topics.every((topic) => progressByTopic.get(topic.id)?.completed === true)
+    !belt.topics.every((topic) => topicProgress[topic.id]?.completed === true)
   ) || BELTS[BELTS.length - 1];
 }
 
 function StudentPracticeStats({ student, belt, onClose }) {
-  const progressByTopic = getProgressByTopic(student);
   const stats = getBeltStats(student, belt);
 
   return (
@@ -136,10 +152,7 @@ function StudentPracticeStats({ student, belt, onClose }) {
           ) : (
             <div className="practice-progress-solved-list">
               {belt.topics.map((topic) => {
-                const solved = getSolvedProblemIndexes(
-                  progressByTopic.get(topic.id),
-                  topic.problems.length
-                );
+                const solved = getSolvedProblemIndexes(student, topic);
                 if (solved.size === 0) return null;
 
                 return (
@@ -307,7 +320,7 @@ export default function PracticeProgress() {
                         {stats.completedTopics}/{stats.totalTopics} topics
                       </span>
                       <span className="practice-progress-solved-count">
-                        {stats.solvedProblems}/{stats.totalProblems} questions solved
+                        {stats.solvedProblems}/{stats.totalProblems} questions solved in {currentBelt.title}
                       </span>
                     </td>
                     <td data-label="Actions" className="text-right">

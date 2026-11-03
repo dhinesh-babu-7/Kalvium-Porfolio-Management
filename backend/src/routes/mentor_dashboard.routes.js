@@ -455,7 +455,7 @@ router.get("/practice-progress", requireAuth, requireMentor, async (req, res) =>
         .in("user_id", studentIds),
       db
         .from("practise_progress")
-        .select("user_id, belt_id, topic_id, learned, solved_problems, completed, updated_at")
+        .select("user_id, belt_progress, topic_progress, problem_progress")
         .in("user_id", studentIds),
     ]);
 
@@ -475,10 +475,11 @@ router.get("/practice-progress", requireAuth, requireMentor, async (req, res) =>
     const progressByUserId = new Map();
 
     for (const row of progress || []) {
-      const userId = String(row.user_id);
-      const studentProgress = progressByUserId.get(userId) || [];
-      studentProgress.push(row);
-      progressByUserId.set(userId, studentProgress);
+      progressByUserId.set(String(row.user_id), {
+        belt_progress: row.belt_progress || {},
+        topic_progress: row.topic_progress || {},
+        problem_progress: row.problem_progress || {},
+      });
     }
 
     const students = assignments.map((assignment) => {
@@ -492,7 +493,11 @@ router.get("/practice-progress", requireAuth, requireMentor, async (req, res) =>
         name: profile.name || profile.kalvium_email || profile.personal_email || "Student",
         email: profile.kalvium_email || profile.personal_email || "",
         avatar_url: profile.avatar_url || "",
-        progress: progressByUserId.get(studentUserId) || [],
+        progress: progressByUserId.get(studentUserId) || {
+          belt_progress: {},
+          topic_progress: {},
+          problem_progress: {},
+        },
       };
     });
 
