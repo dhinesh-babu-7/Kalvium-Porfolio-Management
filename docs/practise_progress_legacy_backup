@@ -1,0 +1,163 @@
+-- Run this script in the Supabase SQL Editor.
+-- It keeps the old table as practise_progress_legacy_backup and does not
+-- delete any existing practice-progress rows.
+
+DO $$
+DECLARE
+    required_column text;
+BEGIN
+    IF to_regclass('public.practise_progress') IS NULL THEN
+        RAISE EXCEPTION 'public.practise_progress does not exist; migration stopped.';
+    END IF;
+
+    IF to_regclass('public.practise_progress_legacy_backup') IS NOT NULL THEN
+        RAISE EXCEPTION 'public.practise_progress_legacy_backup already exists; inspect it before running this migration.';
+    END IF;
+
+    FOREACH required_column IN ARRAY ARRAY[
+        'user_id', 'belt_id', 'topic_id', 'learned',
+        'solved_problems', 'completed', 'updated_at'
+    ] LOOP
+        IF NOT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'practise_progress'
+              AND column_name = required_column
+        ) THEN
+            RAISE EXCEPTION 'Expected column % is missing from public.practise_progress; migration stopped.', required_column;
+        END IF;
+    END LOOP;
+END $$;
+
+ALTER TABLE public.practise_progress
+    RENAME TO practise_progress_legacy_backup;
+
+CREATE TABLE public.practise_progress (
+    user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    progress jsonb NOT NULL DEFAULT '{}'::jsonb,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.practise_progress (user_id, progress, updated_at)
+SELECT
+    user_id,
+    jsonb_object_agg(
+        topic_id,
+        jsonb_build_object(
+            'beltId', belt_id,
+            'learned', learned,
+            'solvedProblems', COALESCE(to_jsonb(solved_problems), '[]'::jsonb),
+            'completed', completed
+        )
+    ),
+    MAX(updated_at)
+FROM public.practise_progress_legacy_backup
+GROUP BY user_id;
+
+ALTER TABLE public.practise_progress ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Students can read their own practice progress"
+    ON public.practise_progress FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Students can insert their own practice progress"
+    ON public.practise_progress FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Students can update their own practice progress"
+    ON public.practise_progress FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.save_practice_topic_progress(
+    p_belt_id integer,
+    p_topic_id text,
+    p_learned boolean,
+    p_solved_problems jsonb,
+    p_completed boolean
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+    next_progress jsonb;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Authentication is required.';
+    END IF;
+
+    INSERT INTO public.practise_progress (user_id, progress, updated_at)
+    VALUES (
+        auth.uid(),
+        jsonb_build_object(
+            p_topic_id,
+            jsonb_build_object(
+                'beltId', p_belt_id,
+                'learned', p_learned,
+                'solvedProblems', COALESCE(p_solved_problems, '[]'::jsonb),
+                'completed', p_completed
+            )
+        ),
+        now()
+    )
+    ON CONFLICT (user_id) DO UPDATE
+    SET progress = jsonb_set(
+            public.practise_progress.progress,
+            ARRAY[p_topic_id],
+            jsonb_build_object(
+                'beltId', p_belt_id,
+                'learned', p_learned,
+                'solvedProblems', COALESCE(p_solved_problems, '[]'::jsonb),
+                'completed', p_completed
+            ),
+            true
+        ),
+        updated_at = now()
+    RETURNING progress INTO next_progress;
+
+    RETURN next_progress;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.merge_legacy_practice_progress(
+    p_progress jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+    current_progress jsonb;
+    merged_progress jsonb;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Authentication is required.';
+    END IF;
+
+    SELECT progress
+    INTO current_progress
+    FROM public.practise_progress
+    WHERE user_id = auth.uid()
+    FOR UPDATE;
+
+    merged_progress := COALESCE(current_progress, '{}'::jsonb) || (
+        SELECT COALESCE(
+            jsonb_object_agg(key, value)
+                FILTER (WHERE NOT (COALESCE(current_progress, '{}'::jsonb) ? key)),
+            '{}'::jsonb
+        )
+        FROM jsonb_each(COALESCE(p_progress, '{}'::jsonb))
+    );
+
+    INSERT INTO public.practise_progress (user_id, progress, updated_at)
+    VALUES (auth.uid(), merged_progress, now())
+    ON CONFLICT (user_id) DO UPDATE
+    SET progress = EXCLUDED.progress, updated_at = now();
+
+    RETURN merged_progress;
+END;
+$$;

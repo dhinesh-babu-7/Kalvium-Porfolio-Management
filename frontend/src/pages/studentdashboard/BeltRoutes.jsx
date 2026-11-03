@@ -9,8 +9,6 @@ import Belt5 from "./belts/Belt5.jsx";
 import Belt6 from "./belts/Belt6.jsx";
 import Belt7 from "./belts/Belt7.jsx";
 
-const STORAGE_KEY = "kalvium-practise-progress-v1";
-
 const BELT_CONTENT = {
     1: Belt1,
     2: Belt2,
@@ -20,23 +18,6 @@ const BELT_CONTENT = {
     6: Belt6,
     7: Belt7,
 };
-
-function readSavedProgress() {
-    try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        const parsed = saved ? JSON.parse(saved) : {};
-
-        return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-            ? parsed
-            : {};
-    } catch {
-        return {};
-    }
-}
-
-function isBeltComplete(progress, belt) {
-    return belt.topics.every((topic) => progress[topic.id]?.completed === true);
-}
 
 export default function BeltRoutes() {
     const { beltId } = useParams();
@@ -57,11 +38,7 @@ export default function BeltRoutes() {
     }
 
     const selectedBelt = BELT_CONTENT[selectedBeltId];
-    const progress = readSavedProgress();
     const previousBelt = BELT_CONTENT[selectedBeltId - 1];
-    const isLocked =
-        selectedBeltId > 1 &&
-        (!previousBelt || !isBeltComplete(progress, previousBelt));
 
     // We'll add the remaining belt content in later steps.
     if (!selectedBelt) {
@@ -81,5 +58,11 @@ export default function BeltRoutes() {
         );
     }
 
-    return <BeltPage belt={selectedBelt} locked={isLocked} />;
+    return (
+        <BeltPage
+            belt={selectedBelt}
+            previousBelt={previousBelt}
+            locked={selectedBeltId > 1}
+        />
+    );
 }

@@ -1,44 +1,48 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./practise.css";
 import { studentTabPath } from "../MentorDashboard/dashboardRoutes.js";
 
 import {
+    getTopicProblemIds,
     loadPracticeProgress,
     savePracticeTopicProgress,
 } from "../../lib/practiceProgress.js";
 
-const STORAGE_KEY = "kalvium-practise-progress-v1";
-
-function readSavedProgress() {
-    try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        return saved ? JSON.parse(saved) : {};
-    } catch {
-        return {};
-    }
-}
-
-function getTopicProgress(progress, topic) {
-    const saved = progress[topic.id] || {};
+function getTopicProgress(topicProgress, problemProgress, topic) {
+    const saved = topicProgress[topic.id] || {};
+    const savedProblems = problemProgress[topic.id] || {};
 
     return {
         learned: saved.learned === true,
-        solvedProblems: Array.isArray(saved.solvedProblems)
-            ? saved.solvedProblems
-            : [],
+        solvedProblems: Object.entries(savedProblems)
+            .filter(([, solved]) => solved === true)
+            .map(([problemId]) => problemId),
         completed: saved.completed === true,
     };
 }
 
-export default function BeltPage({ belt, locked = false }) {
+export default function BeltPage({
+    belt,
+    previousBelt = null,
+    locked = false,
+}) {
     const navigate = useNavigate();
 
-    const [progress, setProgress] = useState(readSavedProgress);
+    const [topicProgress, setTopicProgress] = useState({});
+    const [problemProgress, setProblemProgress] = useState({});
+    const [beltProgress, setBeltProgress] = useState({});
 
     const [userId, setUserId] = useState(null);
     const [progressLoading, setProgressLoading] = useState(true);
     const [progressError, setProgressError] = useState("");
+    const progressRef = useRef({
+        topicProgress: {},
+        problemProgress: {},
+        beltProgress: {},
+    });
+    const saveQueueRef = useRef(Promise.resolve());
+    const saveRevisionRef = useRef(0);
 
     useEffect(() => {
         let cancelled = false;
@@ -53,11 +57,15 @@ export default function BeltPage({ belt, locked = false }) {
                 if (cancelled) return;
 
                 setUserId(result.userId);
-
-                setProgress((previous) => ({
-                    ...previous,
-                    ...result.progress,
-                }));
+                const nextProgress = {
+                    topicProgress: result.topicProgress,
+                    problemProgress: result.problemProgress,
+                    beltProgress: result.beltProgress,
+                };
+                progressRef.current = nextProgress;
+                setTopicProgress(nextProgress.topicProgress);
+                setProblemProgress(nextProgress.problemProgress);
+                setBeltProgress(nextProgress.beltProgress);
             } catch (error) {
                 if (!cancelled) {
                     setProgressError(
@@ -82,35 +90,22 @@ export default function BeltPage({ belt, locked = false }) {
         [belt.topics[0]?.id]: true,
     }));
 
-    useEffect(() => {
-        try {
-            localStorage.setItem(
-                STORAGE_KEY,
-                JSON.stringify(progress)
-            );
-        } catch {
-            // The page remains usable if browser storage is unavailable.
-        }
-    }, [progress]);
+    const topicStatus = (topic) =>
+        getTopicProgress(topicProgress, problemProgress, topic);
 
-    const topicProgress = (topic) =>
-        getTopicProgress(progress, topic);
+    const currentTopicStatus = (topic) =>
+        getTopicProgress(
+            progressRef.current.topicProgress,
+            progressRef.current.problemProgress,
+            topic
+        );
 
     const updateTopicProgress = (topic, changes) => {
         const nextTopicProgress = {
-            ...getTopicProgress(progress, topic),
+            ...currentTopicStatus(topic),
             ...changes,
         };
 
-        const nextProgress = {
-            ...progress,
-            [topic.id]: nextTopicProgress,
-        };
-
-        // Update the page immediately.
-        setProgress(nextProgress);
-
-        // Save the change to Supabase.
         if (!userId) {
             setProgressError(
                 "Your student account is not ready. Please reload the page."
@@ -118,27 +113,96 @@ export default function BeltPage({ belt, locked = false }) {
             return;
         }
 
+        const problemIds = getTopicProblemIds(topic);
+        if (
+            problemIds.length !== topic.problems.length ||
+            problemIds.some((problemId) => !problemId)
+        ) {
+            setProgressError(
+                `Could not identify all problem IDs for ${topic.title}.`
+            );
+            return;
+        }
+
         setProgressError("");
 
-        savePracticeTopicProgress(
-            userId,
-            belt.id,
-            topic.id,
-            nextTopicProgress
-        ).catch((error) => {
-            setProgressError(
-                error.message || "Could not save progress to Supabase."
-            );
-        });
+        const nextTopicMap = {
+            ...progressRef.current.topicProgress,
+            [topic.id]: {
+                learned: nextTopicProgress.learned,
+                completed: nextTopicProgress.completed,
+            },
+        };
+        const nextProblemMap = {
+            ...progressRef.current.problemProgress,
+            [topic.id]: Object.fromEntries(
+                problemIds.map((problemId) => [
+                    problemId,
+                    nextTopicProgress.solvedProblems.includes(problemId),
+                ])
+            ),
+        };
+        const optimisticProgress = {
+            topicProgress: nextTopicMap,
+            problemProgress: nextProblemMap,
+            beltProgress: progressRef.current.beltProgress,
+        };
+        const saveRevision = saveRevisionRef.current + 1;
+        saveRevisionRef.current = saveRevision;
+
+        progressRef.current = optimisticProgress;
+        setTopicProgress(nextTopicMap);
+        setProblemProgress(nextProblemMap);
+
+        saveQueueRef.current = saveQueueRef.current
+            .then(async () => {
+                const savedProgress = await savePracticeTopicProgress(
+                    belt.id,
+                    topic.id,
+                    nextTopicProgress
+                );
+                const finalProgress = {
+                    topicProgress: savedProgress.topicProgress,
+                    problemProgress: savedProgress.problemProgress,
+                    beltProgress: savedProgress.beltProgress,
+                };
+                if (saveRevision === saveRevisionRef.current) {
+                    progressRef.current = finalProgress;
+                    setTopicProgress(finalProgress.topicProgress);
+                    setProblemProgress(finalProgress.problemProgress);
+                    setBeltProgress(finalProgress.beltProgress);
+                }
+            })
+            .catch((error) => {
+                setProgressError(
+                    error.message || "Could not save progress to Supabase."
+                );
+            });
     };
 
+    const previousBeltSavedProgress = previousBelt
+        ? beltProgress[`belt_${previousBelt.id}`]
+        : null;
+    const isLocked =
+        locked &&
+        (!previousBeltSavedProgress?.completed ||
+            !previousBelt.topics.every(
+                (topic) => topicStatus(topic).completed
+            ));
+
     const isBeltComplete = belt.topics.every(
-        (topic) => topicProgress(topic).completed
+        (topic) => topicStatus(topic).completed
     );
 
     const completedTopics = belt.topics.filter(
-        (topic) => topicProgress(topic).completed
+        (topic) => topicStatus(topic).completed
     ).length;
+    const savedBeltProgress = beltProgress[`belt_${belt.id}`] || {};
+    const beltPercentage = Number.isFinite(
+        savedBeltProgress.completionPercentage
+    )
+        ? savedBeltProgress.completionPercentage
+        : (completedTopics / belt.topics.length) * 100;
 
     const toggleTopic = (topicId) => {
         setOpenTopics((previous) => ({
@@ -148,16 +212,19 @@ export default function BeltPage({ belt, locked = false }) {
     };
 
     const toggleProblem = (topic, problemIndex) => {
-        const status = topicProgress(topic);
+        const status = topicStatus(topic);
 
         if (!status.learned || status.completed) return;
 
         const solved = new Set(status.solvedProblems);
 
-        if (solved.has(problemIndex)) {
-            solved.delete(problemIndex);
+        const problemId = getTopicProblemIds(topic)[problemIndex];
+        if (!problemId) return;
+
+        if (solved.has(problemId)) {
+            solved.delete(problemId);
         } else {
-            solved.add(problemIndex);
+            solved.add(problemId);
         }
 
         updateTopicProgress(topic, {
@@ -166,10 +233,11 @@ export default function BeltPage({ belt, locked = false }) {
     };
 
     const completeTopic = (topic) => {
-        const status = topicProgress(topic);
+        const status = topicStatus(topic);
+        const problemIds = getTopicProblemIds(topic);
 
         const allProblemsSolved = topic.problems.every(
-            (_, index) => status.solvedProblems.includes(index)
+            (_, index) => status.solvedProblems.includes(problemIds[index])
         );
 
         if (!status.learned || !allProblemsSolved) return;
@@ -207,8 +275,7 @@ export default function BeltPage({ belt, locked = false }) {
                         <div
                             className="practise-progress-fill"
                             style={{
-                                width: `${(completedTopics / belt.topics.length) * 100
-                                    }%`,
+                                width: `${beltPercentage}%`,
                             }}
                         />
                     </div>
@@ -249,7 +316,7 @@ export default function BeltPage({ belt, locked = false }) {
                     </div>
                 </header>
 
-                {locked ? (
+                {isLocked ? (
                     <div className="practise-locked-message practise-belt-locked-message">
                         <strong>{belt.title} is locked.</strong>
                         <span>
@@ -260,7 +327,7 @@ export default function BeltPage({ belt, locked = false }) {
                 ) : (
                     <div className="practise-topic-list">
                         {belt.topics.map((topic, index) => {
-                            const status = topicProgress(topic);
+                            const status = topicStatus(topic);
                             const expanded = Boolean(openTopics[topic.id]);
 
                             const learningResource = topic.resources.find(
@@ -277,7 +344,9 @@ export default function BeltPage({ belt, locked = false }) {
 
                             const allProblemsSolved = topic.problems.every(
                                 (_, problemIndex) =>
-                                    status.solvedProblems.includes(problemIndex)
+                                    status.solvedProblems.includes(
+                                        getTopicProblemIds(topic)[problemIndex]
+                                    )
                             );
 
                             return (
@@ -349,7 +418,10 @@ export default function BeltPage({ belt, locked = false }) {
                                                         <button
                                                             type="button"
                                                             className="practise-primary-button"
-                                                            disabled={progressLoading}
+                                                            disabled={
+                                                                progressLoading ||
+                                                                !userId
+                                                            }
                                                             onClick={() =>
                                                                 updateTopicProgress(
                                                                     topic,
@@ -406,7 +478,7 @@ export default function BeltPage({ belt, locked = false }) {
                                                             (problem, problemIndex) => {
                                                                 const solved =
                                                                     status.solvedProblems.includes(
-                                                                        problemIndex
+                                                                        getTopicProblemIds(topic)[problemIndex]
                                                                     );
 
                                                                 return (
@@ -421,6 +493,7 @@ export default function BeltPage({ belt, locked = false }) {
                                                                             type="checkbox"
                                                                             checked={solved}
                                                                             disabled={
+                                                                                progressLoading ||
                                                                                 status.completed
                                                                             }
                                                                             onChange={() =>
@@ -450,6 +523,7 @@ export default function BeltPage({ belt, locked = false }) {
                                                             type="button"
                                                             className="practise-primary-button"
                                                             disabled={
+                                                                progressLoading ||
                                                                 status.completed ||
                                                                 !allProblemsSolved
                                                             }
@@ -495,7 +569,7 @@ export default function BeltPage({ belt, locked = false }) {
             </section>
 
             <p className="practise-demo-note">
-                Demo version: your progress is saved in this browser.
+                Your progress is saved to your student account.
             </p>
         </div>
     );
