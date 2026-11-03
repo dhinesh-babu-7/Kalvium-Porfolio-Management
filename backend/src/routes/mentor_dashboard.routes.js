@@ -427,6 +427,82 @@ router.get("/assigned-students", requireAuth, requireMentor, async (req, res) =>
   }
 });
 
+router.get("/practice-progress", requireAuth, requireMentor, async (req, res) => {
+  try {
+    const db = req.authedSupabase;
+    const { data: assignments, error: assignmentError } = await db
+      .from("squad_students")
+      .select("squad_id, student_user_id, assigned_at")
+      .eq("mentor_user_id", req.user.id);
+
+    if (assignmentError) {
+      console.error("Fetch Practice Progress Assignments Error:", assignmentError);
+      return res.status(400).json({ error: assignmentError.message });
+    }
+
+    if (!assignments?.length) {
+      return res.status(200).json({ success: true, students: [] });
+    }
+
+    const studentIds = [...new Set(assignments.map(({ student_user_id }) => student_user_id))];
+    const [
+      { data: profiles, error: profileError },
+      { data: progress, error: progressError },
+    ] = await Promise.all([
+      db
+        .from("profiles")
+        .select("user_id, name, kalvium_email, personal_email, avatar_url")
+        .in("user_id", studentIds),
+      db
+        .from("practise_progress")
+        .select("user_id, belt_id, topic_id, learned, solved_problems, completed, updated_at")
+        .in("user_id", studentIds),
+    ]);
+
+    if (profileError) {
+      console.error("Fetch Practice Progress Profiles Error:", profileError);
+      return res.status(400).json({ error: profileError.message });
+    }
+
+    if (progressError) {
+      console.error("Fetch Assigned Student Practice Progress Error:", progressError);
+      return res.status(400).json({ error: progressError.message });
+    }
+
+    const profilesByUserId = new Map(
+      (profiles || []).map((profile) => [String(profile.user_id), profile])
+    );
+    const progressByUserId = new Map();
+
+    for (const row of progress || []) {
+      const userId = String(row.user_id);
+      const studentProgress = progressByUserId.get(userId) || [];
+      studentProgress.push(row);
+      progressByUserId.set(userId, studentProgress);
+    }
+
+    const students = assignments.map((assignment) => {
+      const studentUserId = String(assignment.student_user_id);
+      const profile = profilesByUserId.get(studentUserId) || {};
+
+      return {
+        student_user_id: assignment.student_user_id,
+        squad_id: assignment.squad_id,
+        assigned_at: assignment.assigned_at,
+        name: profile.name || profile.kalvium_email || profile.personal_email || "Student",
+        email: profile.kalvium_email || profile.personal_email || "",
+        avatar_url: profile.avatar_url || "",
+        progress: progressByUserId.get(studentUserId) || [],
+      };
+    });
+
+    return res.status(200).json({ success: true, students });
+  } catch (error) {
+    console.error("Fetch Practice Progress Error:", error);
+    return res.status(500).json({ error: "Could not load assigned student practice progress." });
+  }
+});
+
 router.get("/student-stats/:studentUserId", requireAuth, requireMentor, async (req, res) => {
   try {
     const { studentUserId } = req.params;
