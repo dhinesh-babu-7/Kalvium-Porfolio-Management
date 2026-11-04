@@ -451,73 +451,72 @@ export default function BeltPage({
                                                     </div>
                                                 ) : (
                                                     <>
-                                                        {practiceResources.map((resource) => (
-                                                            <a
-                                                                key={resource.title}
-                                                                className="practise-resource-link"
-                                                                href={resource.url}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                            >
-                                                                <span className="practise-resource-title">
-                                                                    💻 {resource.title}
-                                                                </span>
-
-                                                                <span className="practise-resource-action">
-                                                                    Open practice ↗
-                                                                </span>
-                                                            </a>
-                                                        ))}
-
                                                         <p>
                                                             Solve each problem and
                                                             check it when finished.
                                                         </p>
 
-                                                        {topic.problems.map(
-                                                            (problem, problemIndex) => {
-                                                                const solved =
-                                                                    status.solvedProblems.includes(
-                                                                        getTopicProblemIds(topic)[problemIndex]
+                                                        <div className="practise-problem-grid">
+                                                            {topic.problems.map(
+                                                                (problem, problemIndex) => {
+                                                                    const solved =
+                                                                        status.solvedProblems.includes(
+                                                                            getTopicProblemIds(topic)[problemIndex]
+                                                                        );
+                                                                    const practiceResource =
+                                                                        practiceResources[problemIndex];
+
+                                                                    return (
+                                                                        <div
+                                                                            key={`${topic.id}-${problemIndex}`}
+                                                                            className={[
+                                                                                "practise-problem",
+                                                                                solved ? "solved" : "",
+                                                                            ].join(" ")}
+                                                                        >
+                                                                            <label className="practise-problem-label">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={solved}
+                                                                                    disabled={
+                                                                                        progressLoading ||
+                                                                                        status.completed
+                                                                                    }
+                                                                                    onChange={() =>
+                                                                                        toggleProblem(
+                                                                                            topic,
+                                                                                            problemIndex
+                                                                                        )
+                                                                                    }
+                                                                                />
+
+                                                                                <span className="practise-problem-text">
+                                                                                    <strong className="practise-problem-heading">
+                                                                                        Problem{" "}
+                                                                                        {problemIndex + 1}
+                                                                                    </strong>
+
+                                                                                    <span>
+                                                                                        {problem}
+                                                                                    </span>
+                                                                                </span>
+                                                                            </label>
+
+                                                                            {practiceResource && (
+                                                                                <a
+                                                                                    className="practise-problem-action"
+                                                                                    href={practiceResource.url}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                >
+                                                                                    Solve ↗
+                                                                                </a>
+                                                                            )}
+                                                                        </div>
                                                                     );
-
-                                                                return (
-                                                                    <label
-                                                                        key={`${topic.id}-${problemIndex}`}
-                                                                        className={[
-                                                                            "practise-problem",
-                                                                            solved ? "solved" : "",
-                                                                        ].join(" ")}
-                                                                    >
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={solved}
-                                                                            disabled={
-                                                                                progressLoading ||
-                                                                                status.completed
-                                                                            }
-                                                                            onChange={() =>
-                                                                                toggleProblem(
-                                                                                    topic,
-                                                                                    problemIndex
-                                                                                )
-                                                                            }
-                                                                        />
-
-                                                                        <span className="practise-problem-text">
-                                                                            <strong>
-                                                                                Problem{" "}
-                                                                                {problemIndex + 1}
-                                                                            </strong>
-
-                                                                            <span>
-                                                                                {problem}
-                                                                            </span>
-                                                                        </span>
-                                                                    </label>
-                                                                );
-                                                            }
-                                                        )}
+                                                                }
+                                                            )}
+                                                        </div>
 
                                                         <button
                                                             type="button"

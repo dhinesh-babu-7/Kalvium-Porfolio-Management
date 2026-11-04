@@ -3,12 +3,12 @@ import { supabase } from "./supabase.js";
 const STORAGE_KEY = "kalvium-practise-progress-v1";
 
 export const BELT_TOPIC_TOTALS = {
-    1: 5,
-    2: 5,
-    3: 3,
-    4: 6,
-    5: 7,
-    6: 6,
+    1: 7,
+    2: 6,
+    3: 6,
+    4: 9,
+    5: 8,
+    6: 7,
     7: 5,
 };
 
