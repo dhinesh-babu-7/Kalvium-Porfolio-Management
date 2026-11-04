@@ -9,6 +9,9 @@ import {
     savePracticeTopicProgress,
 } from "../../lib/practiceProgress.js";
 
+const PRACTICE_SUBMISSION_FORM_URL =
+    "https://docs.google.com/forms/d/e/1FAIpQLSfgwEYtQIB3u4A2IhhUTPGuEshXdV5NhphDbWt6HBn7y5eWMA/viewform";
+
 function getTopicProgress(topicProgress, problemProgress, topic) {
     const saved = topicProgress[topic.id] || {};
     const savedProblems = problemProgress[topic.id] || {};
@@ -161,6 +164,21 @@ export default function BeltPage({
                     topic.id,
                     nextTopicProgress
                 );
+                const savedProblemGroup =
+                    savedProgress.problemProgress[topic.id] || {};
+                const savedStateMatchesRequest = problemIds.every(
+                    (problemId) =>
+                        savedProblemGroup[problemId] ===
+                        nextTopicProgress.solvedProblems.includes(problemId)
+                );
+
+                if (!savedStateMatchesRequest) {
+                    throw new Error(
+                        "Practice progress was not accepted by the database. " +
+                        "Run the document syllabus update SQL in Supabase, then try again."
+                    );
+                }
+
                 const finalProgress = {
                     topicProgress: savedProgress.topicProgress,
                     problemProgress: savedProgress.problemProgress,
@@ -211,8 +229,8 @@ export default function BeltPage({
         }));
     };
 
-    const toggleProblem = (topic, problemIndex) => {
-        const status = topicStatus(topic);
+    const toggleProblem = (topic, problemIndex, checked) => {
+        const status = currentTopicStatus(topic);
 
         if (!status.learned || status.completed) return;
 
@@ -221,10 +239,10 @@ export default function BeltPage({
         const problemId = getTopicProblemIds(topic)[problemIndex];
         if (!problemId) return;
 
-        if (solved.has(problemId)) {
-            solved.delete(problemId);
-        } else {
+        if (checked) {
             solved.add(problemId);
+        } else {
+            solved.delete(problemId);
         }
 
         updateTopicProgress(topic, {
@@ -330,7 +348,7 @@ export default function BeltPage({
                             const status = topicStatus(topic);
                             const expanded = Boolean(openTopics[topic.id]);
 
-                            const learningResource = topic.resources.find(
+                            const learningResources = topic.resources.filter(
                                 (resource) =>
                                     resource.title.startsWith(
                                         "Learning Resource"
@@ -396,22 +414,23 @@ export default function BeltPage({
                                                     the exercises.
                                                 </p>
 
-                                                {learningResource && (
+                                                {learningResources.map((resource) => (
                                                     <a
+                                                        key={resource.url}
                                                         className="practise-resource-link"
-                                                        href={learningResource.url}
+                                                        href={resource.url}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                     >
                                                         <span className="practise-resource-title">
-                                                            📘 {learningResource.title}
+                                                            📘 {resource.title}
                                                         </span>
 
                                                         <span className="practise-resource-action">
                                                             Open learning resource ↗
                                                         </span>
                                                     </a>
-                                                )}
+                                                ))}
 
                                                 {!status.learned &&
                                                     !status.completed && (
@@ -451,73 +470,84 @@ export default function BeltPage({
                                                     </div>
                                                 ) : (
                                                     <>
-                                                        {practiceResources.map((resource) => (
-                                                            <a
-                                                                key={resource.title}
-                                                                className="practise-resource-link"
-                                                                href={resource.url}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                            >
-                                                                <span className="practise-resource-title">
-                                                                    💻 {resource.title}
-                                                                </span>
-
-                                                                <span className="practise-resource-action">
-                                                                    Open practice ↗
-                                                                </span>
-                                                            </a>
-                                                        ))}
-
                                                         <p>
                                                             Solve each problem and
                                                             check it when finished.
                                                         </p>
 
-                                                        {topic.problems.map(
-                                                            (problem, problemIndex) => {
-                                                                const solved =
-                                                                    status.solvedProblems.includes(
-                                                                        getTopicProblemIds(topic)[problemIndex]
-                                                                    );
+                                                        <div className="practise-problem-grid">
+                                                            {topic.problems.map(
+                                                                (problem, problemIndex) => {
+                                                                    const solved =
+                                                                        status.solvedProblems.includes(
+                                                                            getTopicProblemIds(topic)[problemIndex]
+                                                                        );
+                                                                    const practiceResource =
+                                                                        practiceResources[problemIndex];
 
-                                                                return (
-                                                                    <label
-                                                                        key={`${topic.id}-${problemIndex}`}
-                                                                        className={[
-                                                                            "practise-problem",
-                                                                            solved ? "solved" : "",
-                                                                        ].join(" ")}
-                                                                    >
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={solved}
-                                                                            disabled={
-                                                                                progressLoading ||
-                                                                                status.completed
-                                                                            }
-                                                                            onChange={() =>
-                                                                                toggleProblem(
-                                                                                    topic,
-                                                                                    problemIndex
-                                                                                )
-                                                                            }
-                                                                        />
+                                                                    return (
+                                                                        <div
+                                                                            key={`${topic.id}-${problemIndex}`}
+                                                                            className={[
+                                                                                "practise-problem",
+                                                                                solved ? "solved" : "",
+                                                                            ].join(" ")}
+                                                                        >
+                                                                            <label className="practise-problem-label">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={solved}
+                                                                                    disabled={
+                                                                                        progressLoading ||
+                                                                                        status.completed
+                                                                                    }
+                                                                                    onChange={(event) =>
+                                                                                        toggleProblem(
+                                                                                            topic,
+                                                                                            problemIndex,
+                                                                                            event.target.checked
+                                                                                        )
+                                                                                    }
+                                                                                />
 
-                                                                        <span className="practise-problem-text">
-                                                                            <strong>
-                                                                                Problem{" "}
-                                                                                {problemIndex + 1}
-                                                                            </strong>
+                                                                                <span className="practise-problem-text">
+                                                                                    <strong className="practise-problem-heading">
+                                                                                        Problem{" "}
+                                                                                        {problemIndex + 1}
+                                                                                    </strong>
 
-                                                                            <span>
-                                                                                {problem}
+                                                                                    <span>
+                                                                                        {problem}
+                                                                                    </span>
+                                                                                </span>
+                                                                            </label>
+
+                                                                            <span className="practise-problem-actions">
+                                                                                {practiceResource && (
+                                                                                    <a
+                                                                                        className="practise-problem-action"
+                                                                                        href={practiceResource.url}
+                                                                                        target="_blank"
+                                                                                        rel="noopener noreferrer"
+                                                                                    >
+                                                                                        Solve ↗
+                                                                                    </a>
+                                                                                )}
+
+                                                                                <a
+                                                                                    className="practise-problem-action practise-submission-action"
+                                                                                    href={PRACTICE_SUBMISSION_FORM_URL}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                >
+                                                                                    Submit ↗
+                                                                                </a>
                                                                             </span>
-                                                                        </span>
-                                                                    </label>
-                                                                );
-                                                            }
-                                                        )}
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                            )}
+                                                        </div>
 
                                                         <button
                                                             type="button"

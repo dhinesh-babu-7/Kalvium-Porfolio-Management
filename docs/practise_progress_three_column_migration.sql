@@ -56,78 +56,100 @@ AS $$
     SELECT CASE p_topic_id
         WHEN 'b1-variables-assignment-data-types' THEN
             '["add-two-integers","concatenation-of-array","richest-customer-wealth","number-of-good-pairs","shuffle-the-array","final-value-of-variable-after-performing-operations"]'::jsonb
-        WHEN 'b1-operators-precedence' THEN
-            '["calculate-money-in-leetcode-bank","add-binary","subtract-the-product-and-sum-of-digits-of-an-integer","sum-of-squares-of-special-elements","number-of-steps-to-reduce-a-number-to-zero","find-the-highest-altitude"]'::jsonb
         WHEN 'b1-variable-scope-debugging' THEN
-            '["fizz-buzz","number-of-steps-to-reduce-a-number-to-zero","palindrome-number","reverse-integer","plus-one","add-digits"]'::jsonb
+            '["create-hello-world-function","counter","to-be-or-not-to-be","return-length-of-arguments-passed","apply-transform-over-each-element-in-array","memoize"]'::jsonb
+        WHEN 'b1-operators-precedence' THEN
+            '["subtract-the-product-and-sum-of-digits-of-an-integer","number-of-steps-to-reduce-a-number-to-zero","calculate-money-in-leetcode-bank","sum-of-squares-of-special-elements","find-the-highest-altitude","smallest-even-multiple"]'::jsonb
+        WHEN 'b1-input-output-and-formatted-output' THEN
+            '["fizz-buzz","add-two-integers","richest-customer-wealth","number-of-good-pairs","kids-with-the-greatest-number-of-candies","running-sum-of-1d-array"]'::jsonb
         WHEN 'b1-boolean-conditions' THEN
-            '["fizz-buzz","number-of-good-pairs","find-pivot-index","maximum-number-of-words-found-in-sentences","neither-minimum-nor-maximum","divisible-and-non-divisible-sums-difference"]'::jsonb
-        WHEN 'b1-switch-case' THEN
-            '["fizz-buzz","roman-to-integer","integer-to-roman","excel-sheet-column-number","day-of-the-year","reformat-date"]'::jsonb
+            '["fizz-buzz","maximum-number-of-words-found-in-sentences","number-of-employees-who-met-the-target","neither-minimum-nor-maximum","find-the-town-judge","check-if-two-chessboard-squares-have-the-same-color"]'::jsonb
+        WHEN 'b1-functions-parameters-return-values-and-pass-by-value-reference' THEN
+            '["create-hello-world-function","counter","to-be-or-not-to-be","return-length-of-arguments-passed","apply-transform-over-each-element-in-array","filter-elements-from-array"]'::jsonb
+        WHEN 'b1-basic-debugging-and-tracing-syntax-runtime-and-logical-errors' THEN
+            '["fizz-buzz","palindrome-number","reverse-integer","plus-one","add-digits","number-of-steps-to-reduce-a-number-to-zero"]'::jsonb
         WHEN 'b2-for-while-do-while' THEN
-            '["running-sum-of-1d-array","palindrome-number","reverse-integer","add-digits","number-of-steps-to-reduce-a-number-to-zero","calculate-money-in-leetcode-bank"]'::jsonb
+            '["running-sum-of-1d-array","fizz-buzz","number-of-steps-to-reduce-a-number-to-zero","calculate-money-in-leetcode-bank","find-numbers-with-even-number-of-digits","count-odd-numbers-in-an-interval-range"]'::jsonb
         WHEN 'b2-break-continue-sentinel-loops' THEN
-            '["fizz-buzz","count-the-number-of-consistent-strings","find-numbers-with-even-number-of-digits","number-of-good-pairs","contains-duplicate","missing-number"]'::jsonb
+            '["fizz-buzz","count-the-number-of-consistent-strings","find-numbers-with-even-number-of-digits","contains-duplicate","missing-number","find-all-numbers-disappeared-in-an-array"]'::jsonb
         WHEN 'b2-nested-loops-pattern-iteration' THEN
-            '["richest-customer-wealth","matrix-diagonal-sum","transpose-matrix","reshape-the-matrix","lucky-numbers-in-a-matrix","find-numbers-with-even-number-of-digits"]'::jsonb
-        WHEN 'b2-count-condition-loops' THEN
-            '["running-sum-of-1d-array","contains-duplicate","two-sum","maximum-subarray","best-time-to-buy-and-sell-stock","find-pivot-index"]'::jsonb
-        WHEN 'b2-loop-array-string-problems' THEN
-            '["find-numbers-with-even-number-of-digits","count-items-matching-a-rule","goal-parser-interpretation","defanging-an-ip-address","jewels-and-stones","length-of-last-word"]'::jsonb
-        WHEN 'b3-frequency-hash-map' THEN
-            '["valid-palindrome","reverse-string","length-of-last-word","longest-common-prefix","reverse-words-in-a-string-ii","find-the-index-of-the-first-occurrence-in-a-string"]'::jsonb
+            '["fizz-buzz","build-array-from-permutation","concatenation-of-array","running-sum-of-1d-array","pascals-triangle","pascals-triangle-ii"]'::jsonb
+        WHEN 'b2-basic-mathematics-gcd-lcm-primes-and-sieve-of-eratosthenes' THEN
+            '["count-primes","ugly-number","greatest-common-divisor-of-strings","find-greatest-common-divisor-of-array","count-common-factors","prime-arrangements"]'::jsonb
+        WHEN 'b2-digit-problems-modular-arithmetic-fast-exponentiation-and-fractions' THEN
+            '["palindrome-number","reverse-integer","add-digits","powx-n","super-pow","fraction-addition-and-subtraction"]'::jsonb
+        WHEN 'b2-complexity-o-1-o-n-o-n-and-the-cost-of-nested-loops' THEN
+            '["contains-duplicate","two-sum","running-sum-of-1d-array","number-of-good-pairs","richest-customer-wealth","find-numbers-with-even-number-of-digits"]'::jsonb
+        WHEN 'b3-arrays-crud-indexing-bounds-and-traversal' THEN
+            '["build-array-from-permutation","concatenation-of-array","running-sum-of-1d-array","remove-element","missing-number","find-all-numbers-disappeared-in-an-array"]'::jsonb
+        WHEN 'b3-array-operations-insertion-deletion-by-shifting-reverse-rotate-merge-sorted-arrays-and-rearrangement' THEN
+            '["reverse-string","rotate-array","merge-sorted-array","move-zeroes","replace-elements-with-greatest-element-on-right-side","shuffle-the-array"]'::jsonb
+        WHEN 'b3-strings-crud-substrings-comparison-palindrome-anagram-reversal-and-basic-compression' THEN
+            '["valid-palindrome","reverse-string","valid-anagram","longest-common-prefix","find-the-index-of-the-first-occurrence-in-a-string","string-compression"]'::jsonb
         WHEN 'b3-matrices-2d-arrays' THEN
-            '["richest-customer-wealth","matrix-diagonal-sum","transpose-matrix","reshape-the-matrix","lucky-numbers-in-a-matrix","set-matrix-zeroes"]'::jsonb
+            '["matrix-diagonal-sum","transpose-matrix","reshape-the-matrix","spiral-matrix","rotate-image","search-a-2d-matrix"]'::jsonb
+        WHEN 'b3-frequency-hash-map' THEN
+            '["majority-element","single-number","valid-anagram","ransom-note","find-the-difference","top-k-frequent-elements"]'::jsonb
         WHEN 'b3-time-growth-complexity' THEN
-            '["contains-duplicate","two-sum","maximum-subarray","best-time-to-buy-and-sell-stock","product-of-array-except-self","3sum"]'::jsonb
+            '["contains-duplicate","two-sum","running-sum-of-1d-array","number-of-good-pairs","maximum-subarray","product-of-array-except-self"]'::jsonb
+        WHEN 'b4-subarrays-and-subsequences-generation-and-subarray-sum-problems' THEN
+            '["maximum-subarray","maximum-average-subarray-i","subarray-sum-equals-k","minimum-size-subarray-sum","maximum-product-subarray","number-of-sub-arrays-of-size-k-and-average-greater-than-or-equal-to-threshold"]'::jsonb
+        WHEN 'b4-prefix-suffix-sums-and-prefix-xor-pivot-index-and-product-except-self' THEN
+            '["find-pivot-index","range-sum-query-immutable","product-of-array-except-self","find-the-highest-altitude","left-and-right-sum-differences","xor-queries-of-a-subarray"]'::jsonb
+        WHEN 'b4-hashing-counting-lookup-two-sum-subarray-sum-k-and-group-anagrams' THEN
+            '["two-sum","group-anagrams","subarray-sum-equals-k","top-k-frequent-elements","longest-consecutive-sequence","4sum-ii"]'::jsonb
         WHEN 'b4-kadanes-algorithm' THEN
-            '["maximum-subarray","maximum-product-subarray","maximum-sum-circular-subarray","best-time-to-buy-and-sell-stock","k-concatenation-maximum-sum","maximum-absolute-sum-of-any-subarray"]'::jsonb
-        WHEN 'b4-dutch-national-flag' THEN
-            '["sort-colors","sort-an-array","move-zeroes","partition-array-according-to-given-pivot","wiggle-sort-ii","sort-array-by-parity"]'::jsonb
-        WHEN 'b4-moores-voting' THEN
-            '["majority-element","majority-element-ii","check-if-a-number-is-majority-element-in-a-sorted-array","online-majority-element-in-subarray","find-all-duplicates-in-an-array","repeated-element-in-sorted-array"]'::jsonb
-        WHEN 'b4-basic-sorting' THEN
-            '["sort-an-array","sort-colors","merge-sorted-array","relative-sort-array","height-checker","largest-number"]'::jsonb
-        WHEN 'b4-merge-quick-sort' THEN
-            '["sort-an-array","merge-sorted-array","sort-list","kth-largest-element-in-an-array","sort-array-by-parity","largest-number"]'::jsonb
+            '["maximum-subarray","maximum-product-subarray","sort-colors","majority-element","majority-element-ii","best-time-to-buy-and-sell-stock"]'::jsonb
         WHEN 'b4-sliding-window' THEN
-            '["maximum-average-subarray-i","minimum-size-subarray-sum","longest-substring-without-repeating-characters","permutation-in-string","longest-repeating-character-replacement","max-consecutive-ones-iii"]'::jsonb
+            '["maximum-average-subarray-i","minimum-size-subarray-sum","longest-substring-without-repeating-characters","permutation-in-string","find-all-anagrams-in-a-string","max-consecutive-ones-iii"]'::jsonb
+        WHEN 'b4-basic-sorting' THEN
+            '["sort-an-array","sort-colors","largest-number","relative-sort-array","height-checker","insertion-sort-list"]'::jsonb
+        WHEN 'b4-two-pointers-opposite-ends-same-direction-and-three-sum' THEN
+            '["two-sum-ii-input-array-is-sorted","3sum","container-with-most-water","remove-duplicates-from-sorted-array","move-zeroes","trapping-rain-water"]'::jsonb
+        WHEN 'b4-binary-search-lower-upper-bound-rotated-arrays-2d-matrices-and-peak-element' THEN
+            '["binary-search","find-first-and-last-position-of-element-in-sorted-array","search-in-rotated-sorted-array","find-minimum-in-rotated-sorted-array","find-peak-element","search-a-2d-matrix"]'::jsonb
+        WHEN 'b4-counting-sort-and-radix-sort-non-comparison-sorting' THEN
+            '["sort-an-array","sort-colors","relative-sort-array","maximum-gap","h-index","height-checker"]'::jsonb
         WHEN 'b5-singly-linked-lists' THEN
-            '["reverse-linked-list","middle-of-the-linked-list","merge-two-sorted-lists","remove-linked-list-elements","palindrome-linked-list","intersection-of-two-linked-lists"]'::jsonb
+            '["design-linked-list","reverse-linked-list","middle-of-the-linked-list","merge-two-sorted-lists","remove-linked-list-elements","palindrome-linked-list"]'::jsonb
         WHEN 'b5-doubly-circular-linked-lists' THEN
-            '["design-linked-list","flatten-a-multilevel-doubly-linked-list","insert-into-a-sorted-circular-linked-list","lru-cache","linked-list-cycle","linked-list-cycle-ii"]'::jsonb
+            '["design-linked-list","flatten-a-multilevel-doubly-linked-list","insert-into-a-sorted-circular-linked-list","lru-cache","remove-duplicates-from-sorted-list-ii","rotate-list"]'::jsonb
+        WHEN 'b5-linked-list-problem-solving-reverse-middle-node-and-merge-sorted-lists' THEN
+            '["reverse-linked-list","reverse-linked-list-ii","middle-of-the-linked-list","merge-two-sorted-lists","remove-nth-node-from-end-of-list","reorder-list"]'::jsonb
         WHEN 'b5-stacks' THEN
-            '["valid-parentheses","min-stack","evaluate-reverse-polish-notation","daily-temperatures","simplify-path","decode-string"]'::jsonb
+            '["valid-parentheses","min-stack","evaluate-reverse-polish-notation","daily-temperatures","next-greater-element-i","online-stock-span"]'::jsonb
         WHEN 'b5-queues' THEN
-            '["implement-queue-using-stacks","number-of-recent-calls","design-circular-queue","moving-average-from-data-stream","data-stream","rotting-oranges"]'::jsonb
+            '["design-circular-queue","implement-queue-using-stacks","number-of-recent-calls","dota2-senate","design-front-middle-back-queue","time-needed-to-buy-tickets"]'::jsonb
+        WHEN 'b5-deque-operations-and-sliding-window-maximum' THEN
+            '["sliding-window-maximum","design-circular-deque","reveal-cards-in-increasing-order","longest-continuous-subarray-with-absolute-diff-less-than-or-equal-to-limit","jump-game-vi","shortest-subarray-with-sum-at-least-k"]'::jsonb
         WHEN 'b5-monotonic-stack' THEN
-            '["daily-temperatures","next-greater-element-i","next-greater-element-ii","largest-rectangle-in-histogram","online-stock-span","sum-of-subarray-minimums"]'::jsonb
-        WHEN 'b5-two-pointer' THEN
-            '["two-sum-ii-input-array-is-sorted","valid-palindrome","3sum","container-with-most-water","remove-duplicates-from-sorted-array","squares-of-a-sorted-array"]'::jsonb
+            '["daily-temperatures","next-greater-element-i","next-greater-element-ii","largest-rectangle-in-histogram","trapping-rain-water","sum-of-subarray-minimums"]'::jsonb
         WHEN 'b5-hare-tortoise' THEN
-            '["linked-list-cycle","linked-list-cycle-ii","middle-of-the-linked-list","happy-number","palindrome-linked-list","find-the-duplicate-number"]'::jsonb
+            '["linked-list-cycle","linked-list-cycle-ii","happy-number","find-the-duplicate-number","middle-of-the-linked-list","palindrome-linked-list"]'::jsonb
         WHEN 'b6-recursion-fundamentals' THEN
-            '["fibonacci-number","powx-n","reverse-string","swap-nodes-in-pairs","merge-two-sorted-lists","climbing-stairs"]'::jsonb
+            '["fibonacci-number","powx-n","climbing-stairs","reverse-string","swap-nodes-in-pairs","k-th-symbol-in-grammar"]'::jsonb
         WHEN 'b6-recursion-tree-stack-depth' THEN
-            '["fibonacci-number","climbing-stairs","powx-n","maximum-depth-of-binary-tree","k-th-symbol-in-grammar","different-ways-to-add-parentheses"]'::jsonb
+            '["fibonacci-number","powx-n","add-digits","reverse-integer","climbing-stairs","different-ways-to-add-parentheses"]'::jsonb
+        WHEN 'b6-divide-and-conquer-merge-sort-quick-sort-and-quickselect' THEN
+            '["sort-an-array","sort-list","kth-largest-element-in-an-array","kth-largest-element-in-a-stream","the-skyline-problem","maximum-subarray"]'::jsonb
         WHEN 'b6-backtracking-fundamentals' THEN
             '["subsets","permutations","combination-sum","generate-parentheses","letter-combinations-of-a-phone-number","word-search"]'::jsonb
         WHEN 'b6-subsets-subsequences-power-set' THEN
-            '["subsets","subsets-ii","is-subsequence","increasing-subsequences","non-decreasing-subsequences","number-of-subsequences-that-satisfy-the-given-sum-condition"]'::jsonb
+            '["subsets","subsets-ii","permutations","permutations-ii","combinations","combination-sum"]'::jsonb
         WHEN 'b6-permutations-duplicate-handling' THEN
-            '["permutations","permutations-ii","next-permutation","letter-case-permutation","palindrome-permutation","beautiful-arrangement"]'::jsonb
-        WHEN 'b6-recursion-combination' THEN
-            '["combination-sum","combination-sum-ii","combinations","n-queens","sudoku-solver","palindrome-partitioning"]'::jsonb
-        WHEN 'b7-binary-search' THEN
-            '["binary-search","search-insert-position","sqrtx","guess-number-higher-or-lower","valid-perfect-square","arranging-coins"]'::jsonb
-        WHEN 'b7-first-last-position' THEN
-            '["find-first-and-last-position-of-element-in-sorted-array","search-insert-position","find-smallest-letter-greater-than-target","find-peak-element","search-in-rotated-sorted-array","find-minimum-in-rotated-sorted-array"]'::jsonb
+            '["subsets-ii","permutations-ii","combination-sum-ii","letter-tile-possibilities","non-decreasing-subsequences","beautiful-arrangement"]'::jsonb
+        WHEN 'b6-constraint-based-search-word-search-n-queens-sudoku-and-rat-in-a-maze' THEN
+            '["word-search","n-queens","n-queens-ii","sudoku-solver","unique-paths-iii","path-with-maximum-gold"]'::jsonb
         WHEN 'b7-binary-search-answer-space' THEN
             '["koko-eating-bananas","capacity-to-ship-packages-within-d-days","minimum-number-of-days-to-make-m-bouquets","split-array-largest-sum","find-the-smallest-divisor-given-a-threshold","magnetic-force-between-two-balls"]'::jsonb
         WHEN 'b7-greedy-algorithms' THEN
-            '["assign-cookies","lemonade-change","best-time-to-buy-and-sell-stock-ii","jump-game","partition-labels","gas-station"]'::jsonb
-        WHEN 'b7-feasibility-optimization' THEN
-            '["jump-game","jump-game-ii","can-place-flowers","minimum-number-of-arrows-to-burst-balloons","non-overlapping-intervals","task-scheduler"]'::jsonb
+            '["assign-cookies","lemonade-change","maximum-units-on-a-truck","can-place-flowers","jump-game","gas-station"]'::jsonb
+        WHEN 'b7-greedy-applications-activity-selection-interval-scheduling-job-sequencing-and-jump-game' THEN
+            '["non-overlapping-intervals","minimum-number-of-arrows-to-burst-balloons","meeting-rooms","meeting-rooms-ii","jump-game","jump-game-ii"]'::jsonb
+        WHEN 'b7-when-greedy-fails-0-1-knapsack-coin-change-and-longest-increasing-subsequence' THEN
+            '["coin-change","coin-change-2","partition-equal-subset-sum","last-stone-weight-ii","longest-increasing-subsequence","ones-and-zeroes"]'::jsonb
+        WHEN 'b7-choosing-the-right-approach-binary-search-on-answer-space-vs-greedy-vs-dynamic-programming' THEN
+            '["koko-eating-bananas","capacity-to-ship-packages-within-d-days","jump-game","jump-game-ii","coin-change","longest-increasing-subsequence"]'::jsonb
         ELSE '[]'::jsonb
     END;
 $$;
@@ -301,13 +323,13 @@ belt_values AS (
     SELECT
         p.user_id,
         jsonb_build_object(
-            'belt_1', jsonb_build_object('unlocked', true, 'completed', COALESCE(c1.completed_topics, 0) = 5, 'completedTopics', COALESCE(c1.completed_topics, 0), 'totalTopics', 5, 'completionPercentage', (COALESCE(c1.completed_topics, 0) * 100) / 5),
-            'belt_2', jsonb_build_object('unlocked', COALESCE(c1.completed_topics, 0) = 5, 'completed', COALESCE(c2.completed_topics, 0) = 5, 'completedTopics', COALESCE(c2.completed_topics, 0), 'totalTopics', 5, 'completionPercentage', (COALESCE(c2.completed_topics, 0) * 100) / 5),
-            'belt_3', jsonb_build_object('unlocked', COALESCE(c2.completed_topics, 0) = 5, 'completed', COALESCE(c3.completed_topics, 0) = 3, 'completedTopics', COALESCE(c3.completed_topics, 0), 'totalTopics', 3, 'completionPercentage', (COALESCE(c3.completed_topics, 0) * 100) / 3),
-            'belt_4', jsonb_build_object('unlocked', COALESCE(c3.completed_topics, 0) = 3, 'completed', COALESCE(c4.completed_topics, 0) = 6, 'completedTopics', COALESCE(c4.completed_topics, 0), 'totalTopics', 6, 'completionPercentage', (COALESCE(c4.completed_topics, 0) * 100) / 6),
-            'belt_5', jsonb_build_object('unlocked', COALESCE(c4.completed_topics, 0) = 6, 'completed', COALESCE(c5.completed_topics, 0) = 7, 'completedTopics', COALESCE(c5.completed_topics, 0), 'totalTopics', 7, 'completionPercentage', (COALESCE(c5.completed_topics, 0) * 100) / 7),
-            'belt_6', jsonb_build_object('unlocked', COALESCE(c5.completed_topics, 0) = 7, 'completed', COALESCE(c6.completed_topics, 0) = 6, 'completedTopics', COALESCE(c6.completed_topics, 0), 'totalTopics', 6, 'completionPercentage', (COALESCE(c6.completed_topics, 0) * 100) / 6),
-            'belt_7', jsonb_build_object('unlocked', COALESCE(c6.completed_topics, 0) = 6, 'completed', COALESCE(c7.completed_topics, 0) = 5, 'completedTopics', COALESCE(c7.completed_topics, 0), 'totalTopics', 5, 'completionPercentage', (COALESCE(c7.completed_topics, 0) * 100) / 5)
+            'belt_1', jsonb_build_object('unlocked', true, 'completed', COALESCE(c1.completed_topics, 0) = 7, 'completedTopics', COALESCE(c1.completed_topics, 0), 'totalTopics', 7, 'completionPercentage', (COALESCE(c1.completed_topics, 0) * 100) / 7),
+            'belt_2', jsonb_build_object('unlocked', COALESCE(c1.completed_topics, 0) = 7, 'completed', COALESCE(c2.completed_topics, 0) = 6, 'completedTopics', COALESCE(c2.completed_topics, 0), 'totalTopics', 6, 'completionPercentage', (COALESCE(c2.completed_topics, 0) * 100) / 6),
+            'belt_3', jsonb_build_object('unlocked', COALESCE(c2.completed_topics, 0) = 6, 'completed', COALESCE(c3.completed_topics, 0) = 6, 'completedTopics', COALESCE(c3.completed_topics, 0), 'totalTopics', 6, 'completionPercentage', (COALESCE(c3.completed_topics, 0) * 100) / 6),
+            'belt_4', jsonb_build_object('unlocked', COALESCE(c3.completed_topics, 0) = 6, 'completed', COALESCE(c4.completed_topics, 0) = 9, 'completedTopics', COALESCE(c4.completed_topics, 0), 'totalTopics', 9, 'completionPercentage', (COALESCE(c4.completed_topics, 0) * 100) / 9),
+            'belt_5', jsonb_build_object('unlocked', COALESCE(c4.completed_topics, 0) = 9, 'completed', COALESCE(c5.completed_topics, 0) = 8, 'completedTopics', COALESCE(c5.completed_topics, 0), 'totalTopics', 8, 'completionPercentage', (COALESCE(c5.completed_topics, 0) * 100) / 8),
+            'belt_6', jsonb_build_object('unlocked', COALESCE(c5.completed_topics, 0) = 8, 'completed', COALESCE(c6.completed_topics, 0) = 7, 'completedTopics', COALESCE(c6.completed_topics, 0), 'totalTopics', 7, 'completionPercentage', (COALESCE(c6.completed_topics, 0) * 100) / 7),
+            'belt_7', jsonb_build_object('unlocked', COALESCE(c6.completed_topics, 0) = 7, 'completed', COALESCE(c7.completed_topics, 0) = 5, 'completedTopics', COALESCE(c7.completed_topics, 0), 'totalTopics', 5, 'completionPercentage', (COALESCE(c7.completed_topics, 0) * 100) / 5)
         ) AS belt_progress
     FROM public.practise_progress AS p
     LEFT JOIN topic_counts c1 ON c1.user_id = p.user_id AND c1.belt_number = 1
@@ -360,8 +382,8 @@ BEGIN
     FOR belt_key, belt_total IN
         SELECT *
         FROM (VALUES
-            ('belt_1', 5), ('belt_2', 5), ('belt_3', 3), ('belt_4', 6),
-            ('belt_5', 7), ('belt_6', 6), ('belt_7', 5)
+            ('belt_1', 7), ('belt_2', 6), ('belt_3', 6), ('belt_4', 9),
+            ('belt_5', 8), ('belt_6', 7), ('belt_7', 5)
         ) AS totals(key, total)
     LOOP
         SELECT COUNT(*)::integer

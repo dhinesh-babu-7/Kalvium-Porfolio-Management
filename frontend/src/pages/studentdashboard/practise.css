@@ -437,7 +437,7 @@
 
 .practise-resource-section > p,
 .practise-problems-section > p {
-  margin: 0 0 14px;
+  margin: 0 0 8px;
   color: #667085;
   font-size: 13px;
   line-height: 1.7;
@@ -565,12 +565,18 @@
 
 /* Practice problem cards */
 
+.practise-problem-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .practise-problem {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  margin: 10px 0;
-  padding: 15px;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
   color: #172033;
   background: #fafbfd;
   border: 1px solid #e0e6ef;
@@ -599,6 +605,16 @@
   cursor: pointer;
 }
 
+.practise-problem-label {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  cursor: pointer;
+}
+
 .practise-problem input:disabled {
   cursor: not-allowed;
 }
@@ -609,19 +625,65 @@
 }
 
 .practise-problem-text strong {
-  display: block;
-  margin-bottom: 5px;
   color: #e73841;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
+}
+
+.practise-problem-heading {
+  display: block;
+  margin-bottom: 3px;
 }
 
 .practise-problem-text > span {
   display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-height: 2.8em;
   color: #475467;
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 11px;
+  line-height: 1.4;
   overflow-wrap: anywhere;
+  overflow: hidden;
+}
+
+.practise-problem-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.practise-problem-action {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 3px 6px;
+  color: #e73841;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  border: 1px solid #f4b4b8;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.practise-problem-action:hover {
+  color: #b82029;
+  border-color: #e73841;
+  background: #fff9f9;
+}
+
+.practise-submission-action {
+  color: #1677a8;
+  border-color: #a9d8ed;
+}
+
+.practise-submission-action:hover {
+  color: #0e5579;
+  border-color: #1677a8;
+  background: #f3fbff;
 }
 
 .practise-help-text {
@@ -640,6 +702,10 @@
 
 @media (max-width: 1100px) {
   .practise-belts-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .practise-problem-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -702,5 +768,23 @@
   .practise-resource-link {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .practise-problem-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .practise-problem-label {
+    gap: 8px;
+  }
+
+  .practise-problem-action {
+    padding: 3px 6px;
+    font-size: 10px;
+  }
+
+  .practise-problem-actions {
+    gap: 4px;
   }
 }
