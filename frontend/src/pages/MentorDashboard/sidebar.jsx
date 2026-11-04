@@ -11,6 +11,7 @@ import {
   FileWarning,
   Activity,
   BookOpenCheck,
+  ClipboardCheck,
   Menu,
   X,
   CalendarCheck,
@@ -20,6 +21,7 @@ import kalviumLogo from "../../assets/kalvium-logo.svg";
 import dojoPulseShrine from "../../assets/dojo-pulse-shrine.svg";
 import { supabase } from "../../lib/supabase";
 import { getExceptionRequestCount } from "../../api/routes/Mentor/exception";
+import { getPracticeTopicReviewCount } from "../../api/routes/MentorDashboard/practiceTopicReviews.js";
 import { DOJO_PULSE_URL, ATTEND_FLOW_URL } from "./dashboardRoutes.js";
 import "./mentordashboard.css";
 import "./sidebar.css";
@@ -30,14 +32,16 @@ const NAV_ITEMS = [
   { label: "Overview", icon: Eye },
   { label: "Assigned", icon: Users },
   { label: "Practice Progress", icon: BookOpenCheck },
+  { label: "Topic Reviews", icon: ClipboardCheck },
   { label: "Exception Requests", icon: FileWarning },
   { label: "Settings", icon: Settings },
-  { label: "LeetCode", icon: Activity },
+  
 ];
 
 const Sidebar = ({ activeNav, setActiveNav }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [exceptionCount, setExceptionCount] = useState(0);
+  const [topicReviewCount, setTopicReviewCount] = useState(0);
   // Mobile hamburger (<=768px): nav rows are hidden until the menu opens.
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(
@@ -68,6 +72,26 @@ const Sidebar = ({ activeNav, setActiveNav }) => {
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const loadCount = () => {
+      getPracticeTopicReviewCount()
+        .then((count) => {
+          if (alive) setTopicReviewCount(count);
+        })
+        .catch((error) => {
+          console.error("Error fetching pending topic review count:", error);
+        });
+    };
+
+    loadCount();
+    const intervalId = window.setInterval(loadCount, 30000);
+    return () => {
+      alive = false;
+      window.clearInterval(intervalId);
+    };
+  }, [activeNav]);
 
   const handleLogout = async () => {
     try {
@@ -128,6 +152,9 @@ const Sidebar = ({ activeNav, setActiveNav }) => {
             {!isCollapsed && <span>{label}</span>}
             {label === "Exception Requests" && exceptionCount > 0 && (
               <span className="pm-nav-badge">{exceptionCount}</span>
+            )}
+            {label === "Topic Reviews" && topicReviewCount > 0 && (
+              <span className="pm-nav-badge">{topicReviewCount}</span>
             )}
           </button>
         ))}
