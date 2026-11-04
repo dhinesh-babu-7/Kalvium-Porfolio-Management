@@ -9,6 +9,9 @@ import {
     savePracticeTopicProgress,
 } from "../../lib/practiceProgress.js";
 
+const PRACTICE_SUBMISSION_FORM_URL =
+    "https://docs.google.com/forms/d/e/1FAIpQLSfgwEYtQIB3u4A2IhhUTPGuEshXdV5NhphDbWt6HBn7y5eWMA/viewform";
+
 function getTopicProgress(topicProgress, problemProgress, topic) {
     const saved = topicProgress[topic.id] || {};
     const savedProblems = problemProgress[topic.id] || {};
@@ -161,6 +164,21 @@ export default function BeltPage({
                     topic.id,
                     nextTopicProgress
                 );
+                const savedProblemGroup =
+                    savedProgress.problemProgress[topic.id] || {};
+                const savedStateMatchesRequest = problemIds.every(
+                    (problemId) =>
+                        savedProblemGroup[problemId] ===
+                        nextTopicProgress.solvedProblems.includes(problemId)
+                );
+
+                if (!savedStateMatchesRequest) {
+                    throw new Error(
+                        "Practice progress was not accepted by the database. " +
+                        "Run the document syllabus update SQL in Supabase, then try again."
+                    );
+                }
+
                 const finalProgress = {
                     topicProgress: savedProgress.topicProgress,
                     problemProgress: savedProgress.problemProgress,
@@ -211,8 +229,8 @@ export default function BeltPage({
         }));
     };
 
-    const toggleProblem = (topic, problemIndex) => {
-        const status = topicStatus(topic);
+    const toggleProblem = (topic, problemIndex, checked) => {
+        const status = currentTopicStatus(topic);
 
         if (!status.learned || status.completed) return;
 
@@ -221,10 +239,10 @@ export default function BeltPage({
         const problemId = getTopicProblemIds(topic)[problemIndex];
         if (!problemId) return;
 
-        if (solved.has(problemId)) {
-            solved.delete(problemId);
-        } else {
+        if (checked) {
             solved.add(problemId);
+        } else {
+            solved.delete(problemId);
         }
 
         updateTopicProgress(topic, {
@@ -330,7 +348,7 @@ export default function BeltPage({
                             const status = topicStatus(topic);
                             const expanded = Boolean(openTopics[topic.id]);
 
-                            const learningResource = topic.resources.find(
+                            const learningResources = topic.resources.filter(
                                 (resource) =>
                                     resource.title.startsWith(
                                         "Learning Resource"
@@ -396,22 +414,23 @@ export default function BeltPage({
                                                     the exercises.
                                                 </p>
 
-                                                {learningResource && (
+                                                {learningResources.map((resource) => (
                                                     <a
+                                                        key={resource.url}
                                                         className="practise-resource-link"
-                                                        href={learningResource.url}
+                                                        href={resource.url}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                     >
                                                         <span className="practise-resource-title">
-                                                            📘 {learningResource.title}
+                                                            📘 {resource.title}
                                                         </span>
 
                                                         <span className="practise-resource-action">
                                                             Open learning resource ↗
                                                         </span>
                                                     </a>
-                                                )}
+                                                ))}
 
                                                 {!status.learned &&
                                                     !status.completed && (
@@ -482,10 +501,11 @@ export default function BeltPage({
                                                                                         progressLoading ||
                                                                                         status.completed
                                                                                     }
-                                                                                    onChange={() =>
+                                                                                    onChange={(event) =>
                                                                                         toggleProblem(
                                                                                             topic,
-                                                                                            problemIndex
+                                                                                            problemIndex,
+                                                                                            event.target.checked
                                                                                         )
                                                                                     }
                                                                                 />
@@ -502,16 +522,27 @@ export default function BeltPage({
                                                                                 </span>
                                                                             </label>
 
-                                                                            {practiceResource && (
+                                                                            <span className="practise-problem-actions">
+                                                                                {practiceResource && (
+                                                                                    <a
+                                                                                        className="practise-problem-action"
+                                                                                        href={practiceResource.url}
+                                                                                        target="_blank"
+                                                                                        rel="noopener noreferrer"
+                                                                                    >
+                                                                                        Solve ↗
+                                                                                    </a>
+                                                                                )}
+
                                                                                 <a
-                                                                                    className="practise-problem-action"
-                                                                                    href={practiceResource.url}
+                                                                                    className="practise-problem-action practise-submission-action"
+                                                                                    href={PRACTICE_SUBMISSION_FORM_URL}
                                                                                     target="_blank"
                                                                                     rel="noopener noreferrer"
                                                                                 >
-                                                                                    Solve ↗
+                                                                                    Submit ↗
                                                                                 </a>
-                                                                            )}
+                                                                            </span>
                                                                         </div>
                                                                     );
                                                                 }

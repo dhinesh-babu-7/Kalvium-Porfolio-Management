@@ -648,6 +648,13 @@
   overflow: hidden;
 }
 
+.practise-problem-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 5px;
+}
+
 .practise-problem-action {
   flex-shrink: 0;
   align-self: flex-start;
@@ -666,6 +673,17 @@
   color: #b82029;
   border-color: #e73841;
   background: #fff9f9;
+}
+
+.practise-submission-action {
+  color: #1677a8;
+  border-color: #a9d8ed;
+}
+
+.practise-submission-action:hover {
+  color: #0e5579;
+  border-color: #1677a8;
+  background: #f3fbff;
 }
 
 .practise-help-text {
@@ -764,5 +782,9 @@
   .practise-problem-action {
     padding: 3px 6px;
     font-size: 10px;
+  }
+
+  .practise-problem-actions {
+    gap: 4px;
   }
 }
