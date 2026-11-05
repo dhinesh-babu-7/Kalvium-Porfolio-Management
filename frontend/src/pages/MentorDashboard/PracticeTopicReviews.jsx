@@ -30,7 +30,7 @@ import "./PracticeTopicReviews.css";
 
 const BELTS = [Belt1, Belt2, Belt3, Belt4, Belt5, Belt6, Belt7];
 const PRACTICE_SUBMISSIONS_SHEET_URL =
-  "https://docs.google.com/spreadsheets/d/1rC_U6xnnjDXyv9msCxg0ryF7V_FUF98m7i3CtIl7QoE/edit?gid=1204924227#gid=1204924227";
+  "https://docs.google.com/spreadsheets/d/1_-wQUnja8Unhor3RXYC4fa8Jck8X9iyMygwEuLGjOv8/edit?gid=1948906196#gid=1948906196";
 const TOPICS = new Map(
   BELTS.flatMap((belt) =>
     belt.topics.map((topic) => [
