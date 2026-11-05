@@ -297,7 +297,7 @@ export default function BeltPage({
         .map(Number)
         .filter((level) => Number.isInteger(level) && level >= 1 && level <= BELT_NAMES.length)
         .reduce((highest, level) => Math.max(highest, level), 0);
-    const isAssessedBelt = assessedBeltLevel >= belt.id;
+    const isAssessedBelt = assessedBeltLevel + 1 >= belt.id;
     const isLocked =
         locked &&
         !isAssessedBelt &&

@@ -75,7 +75,7 @@ export default function Practise() {
     const isBeltUnlocked = (index) =>
         index === 0 ||
         beltProgress[`belt_${index}`]?.completed === true ||
-        index < assessedBeltLevel;
+        index <= assessedBeltLevel;
 
     const completedTopics = BELTS.reduce(
         (total, belt) =>

@@ -65,6 +65,12 @@ function readBeltLevelRows(file) {
         email: findValue(["email", "email_id", "kalvium_email", "student_email", "student email"]),
         squad: findValue(["squad", "squad_id", "squad_number", "squad number"]),
         name: findValue(["name", "student_name", "student name"]),
+        assessed_at: findValue([
+          "belt_test_updated_at",
+          "updated_at",
+          "calculated_end_time",
+          "start_time",
+        ]),
         final_belt_levels: findValue(["final_belt_levels", "final belt levels"]),
       };
     });

@@ -745,7 +745,7 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
     }
 
     const results = { updated: [], skipped: [], invalid: [] };
-    const updates = [];
+    const updatesByStudent = new Map();
     for (const [index, row] of rows.entries()) {
       const email = normalizeEmail(
         row?.email ?? row?.email_id ?? row?.kalvium_email ?? row?.student_email ??
@@ -755,6 +755,8 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
         row?.squad ?? row?.squad_id ?? row?.squad_number ?? row?.["squad number"] ?? ""
       );
       const studentName = normalizeName(row?.name ?? row?.student_name ?? row?.studentName);
+      const sourceTimestamp = row?.assessed_at ?? row?.belt_test_updated_at ??
+        row?.updated_at ?? row?.calculated_end_time ?? row?.start_time;
       const rawLevels = row?.final_belt_levels ?? row?.finalBeltLevels ?? row?.["final_belt_levels"];
       let levels = rawLevels;
       if (typeof levels === "string") {
@@ -783,25 +785,90 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
         continue;
       }
 
-      const assessedLevelUpdate = {
+      const studentKey = String(profile.user_id);
+      const existing = updatesByStudent.get(studentKey);
+      const candidateTime = Date.parse(sourceTimestamp || "");
+      const existingTime = Date.parse(existing?.sourceTimestamp || "");
+      const mergedLevels = Object.fromEntries(
+        Object.entries({
+          ...(existing?.final_belt_levels || {}),
+          ...levels,
+        }).map(([language, level]) => [
+          language,
+          Math.max(
+            Number(existing?.final_belt_levels?.[language]) || 0,
+            Number(level) || 0
+          ),
+        ])
+      );
+      updatesByStudent.set(studentKey, {
         user_id: profile.user_id,
-        final_belt_levels: levels,
-        final_belt_levels_updated_at: new Date().toISOString(),
-      };
-      updates.push(assessedLevelUpdate);
-      results.updated.push({ row: index + 2, email });
+        final_belt_levels: mergedLevels,
+        sourceTimestamp:
+          Number.isFinite(candidateTime) &&
+          (!Number.isFinite(existingTime) || candidateTime > existingTime)
+            ? new Date(candidateTime).toISOString()
+            : (existing?.sourceTimestamp || ""),
+        row: index + 2,
+        email,
+      });
     }
+
+    const updates = [...updatesByStudent.values()].map(({ sourceTimestamp, row, email, ...update }) => ({
+      ...update,
+      final_belt_levels_updated_at: sourceTimestamp || new Date().toISOString(),
+      sourceTimestamp,
+      sourceRow: row,
+      sourceEmail: email,
+    }));
 
     if (updates.length) {
       const { data: existingProgress, error: existingProgressError } = await supabaseAdmin
         .from("practise_progress")
-        .select("user_id")
+        .select("user_id, final_belt_levels, final_belt_levels_updated_at")
         .in("user_id", updates.map(({ user_id }) => user_id));
       if (existingProgressError) throw existingProgressError;
 
-      const existingIds = new Set((existingProgress || []).map(({ user_id }) => String(user_id)));
-      const updateRows = updates.filter(({ user_id }) => existingIds.has(String(user_id)));
-      const insertRows = updates.filter(({ user_id }) => !existingIds.has(String(user_id)));
+      const existingById = new Map(
+        (existingProgress || []).map((row) => [String(row.user_id), row])
+      );
+      const acceptedUpdates = updates.map((candidate) => {
+        const existing = existingById.get(String(candidate.user_id));
+        const existingLevels = existing?.final_belt_levels || {};
+        const mergedLevels = Object.fromEntries(
+          Object.entries({
+            ...existingLevels,
+            ...candidate.final_belt_levels,
+          }).map(([language, level]) => [
+            language,
+            Math.max(
+              Number(existingLevels[language]) || 0,
+              Number(level) || 0
+            ),
+          ])
+        );
+        const existingTime = Date.parse(existing?.final_belt_levels_updated_at || "");
+        const candidateTime = Date.parse(candidate.sourceTimestamp || "");
+        const latestTimestamp = Number.isFinite(candidateTime) &&
+          (!Number.isFinite(existingTime) || candidateTime > existingTime)
+          ? candidate.final_belt_levels_updated_at
+          : (existing?.final_belt_levels_updated_at || candidate.final_belt_levels_updated_at);
+        results.updated.push({
+          row: candidate.sourceRow,
+          email: candidate.sourceEmail,
+        });
+        return {
+          ...candidate,
+          final_belt_levels: mergedLevels,
+          final_belt_levels_updated_at: latestTimestamp,
+        };
+      });
+      const updateRows = acceptedUpdates.filter(({ user_id }) =>
+        existingById.has(String(user_id))
+      );
+      const insertRows = acceptedUpdates.filter(({ user_id }) =>
+        !existingById.has(String(user_id))
+      );
 
       for (let start = 0; start < updateRows.length; start += 25) {
         const batch = updateRows.slice(start, start + 25);
@@ -836,7 +903,9 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
         const { error: insertError } = await supabaseAdmin
           .from("practise_progress")
           .insert(insertRows.map((row) => ({
-            ...row,
+            user_id: row.user_id,
+            final_belt_levels: row.final_belt_levels,
+            final_belt_levels_updated_at: row.final_belt_levels_updated_at,
             topic_progress: approvedTopicsByStudent.get(String(row.user_id)) || {},
           })));
         if (insertError) throw insertError;
