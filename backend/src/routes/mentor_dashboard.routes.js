@@ -745,7 +745,7 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
     }
 
     const results = { updated: [], skipped: [], invalid: [] };
-    const updates = [];
+    const updatesByStudent = new Map();
     for (const [index, row] of rows.entries()) {
       const email = normalizeEmail(
         row?.email ?? row?.email_id ?? row?.kalvium_email ?? row?.student_email ??
@@ -755,6 +755,8 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
         row?.squad ?? row?.squad_id ?? row?.squad_number ?? row?.["squad number"] ?? ""
       );
       const studentName = normalizeName(row?.name ?? row?.student_name ?? row?.studentName);
+      const sourceTimestamp = row?.assessed_at ?? row?.belt_test_updated_at ??
+        row?.updated_at ?? row?.calculated_end_time ?? row?.start_time;
       const rawLevels = row?.final_belt_levels ?? row?.finalBeltLevels ?? row?.["final_belt_levels"];
       let levels = rawLevels;
       if (typeof levels === "string") {
@@ -788,9 +790,33 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
         final_belt_levels: levels,
         final_belt_levels_updated_at: new Date().toISOString(),
       };
-      updates.push(assessedLevelUpdate);
-      results.updated.push({ row: index + 2, email });
+      const studentKey = String(profile.user_id);
+      const existing = updatesByStudent.get(studentKey);
+      const candidateTime = Date.parse(sourceTimestamp || "");
+      const existingTime = Date.parse(existing?.sourceTimestamp || "");
+      if (
+        !existing ||
+        (Number.isFinite(candidateTime) && !Number.isFinite(existingTime)) ||
+        (Number.isFinite(candidateTime) && Number.isFinite(existingTime) && candidateTime > existingTime)
+      ) {
+        updatesByStudent.set(studentKey, {
+          ...assessedLevelUpdate,
+          sourceTimestamp: Number.isFinite(candidateTime)
+            ? new Date(candidateTime).toISOString()
+            : "",
+          row: index + 2,
+          email,
+        });
+      }
     }
+
+    const updates = [...updatesByStudent.values()].map(({ sourceTimestamp, row, email, ...update }) => {
+      if (sourceTimestamp) {
+        update.final_belt_levels_updated_at = sourceTimestamp;
+      }
+      results.updated.push({ row, email });
+      return update;
+    });
 
     if (updates.length) {
       const { data: existingProgress, error: existingProgressError } = await supabaseAdmin
