@@ -10,13 +10,14 @@ export const DEFAULT_TAB = "dashboard";
 export const MENTOR_BASE = "/mentor/dashboard";
 export const STUDENT_BASE = "/student/dashboard";
 
-export const MENTOR_TABS = ["dashboard", "overview", "assigned", "practice-progress", "exceptions", "settings", "leetcode"];
+export const MENTOR_TABS = ["dashboard", "overview", "assigned", "practice-progress", "topic-reviews", "exceptions", "settings", "leetcode"];
 
 export const MENTOR_TAB_LABELS = {
   dashboard: "Dashboard",
   overview: "Overview",
   assigned: "Assigned",
   "practice-progress": "Practice Progress",
+  "topic-reviews": "Topic Reviews",
   exceptions: "Exception Requests",
   settings: "Settings",
   leetcode: "LeetCode",

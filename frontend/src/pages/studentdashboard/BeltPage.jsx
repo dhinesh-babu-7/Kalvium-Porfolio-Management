@@ -8,20 +8,26 @@ import {
     loadPracticeProgress,
     savePracticeTopicProgress,
 } from "../../lib/practiceProgress.js";
+import {
+    getStudentPracticeTopicReviews,
+    submitPracticeTopicForReview,
+} from "../../api/routes/StudentDashboard/practiceTopicReviews.js";
 
 const PRACTICE_SUBMISSION_FORM_URL =
     "https://docs.google.com/forms/d/e/1FAIpQLSfgwEYtQIB3u4A2IhhUTPGuEshXdV5NhphDbWt6HBn7y5eWMA/viewform";
 
-function getTopicProgress(topicProgress, problemProgress, topic) {
+function getTopicProgress(topicProgress, problemProgress, topic, review) {
     const saved = topicProgress[topic.id] || {};
     const savedProblems = problemProgress[topic.id] || {};
+    const reviewStatus = review?.status || (saved.completed === true ? "approved" : null);
 
     return {
         learned: saved.learned === true,
         solvedProblems: Object.entries(savedProblems)
             .filter(([, solved]) => solved === true)
             .map(([problemId]) => problemId),
-        completed: saved.completed === true,
+        completed: reviewStatus === "approved" || saved.completed === true,
+        reviewStatus,
     };
 }
 
@@ -34,15 +40,16 @@ export default function BeltPage({
 
     const [topicProgress, setTopicProgress] = useState({});
     const [problemProgress, setProblemProgress] = useState({});
-    const [beltProgress, setBeltProgress] = useState({});
+    const [reviewRequests, setReviewRequests] = useState([]);
 
     const [userId, setUserId] = useState(null);
     const [progressLoading, setProgressLoading] = useState(true);
     const [progressError, setProgressError] = useState("");
+    const [reviewError, setReviewError] = useState("");
+    const [submittingTopicId, setSubmittingTopicId] = useState(null);
     const progressRef = useRef({
         topicProgress: {},
         problemProgress: {},
-        beltProgress: {},
     });
     const saveQueueRef = useRef(Promise.resolve());
     const saveRevisionRef = useRef(0);
@@ -63,12 +70,22 @@ export default function BeltPage({
                 const nextProgress = {
                     topicProgress: result.topicProgress,
                     problemProgress: result.problemProgress,
-                    beltProgress: result.beltProgress,
                 };
                 progressRef.current = nextProgress;
                 setTopicProgress(nextProgress.topicProgress);
                 setProblemProgress(nextProgress.problemProgress);
-                setBeltProgress(nextProgress.beltProgress);
+
+                try {
+                    setReviewRequests(await getStudentPracticeTopicReviews());
+                } catch (error) {
+                    if (!cancelled) {
+                        setReviewError(
+                            error.response?.data?.error ||
+                            error.message ||
+                            "Could not load topic review status."
+                        );
+                    }
+                }
             } catch (error) {
                 if (!cancelled) {
                     setProgressError(
@@ -89,23 +106,74 @@ export default function BeltPage({
         };
     }, []);
 
+    useEffect(() => {
+        let cancelled = false;
+        const refreshReviews = async () => {
+            try {
+                const reviews = await getStudentPracticeTopicReviews();
+                if (!cancelled) {
+                    setReviewRequests(reviews);
+                    setReviewError("");
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setReviewError(
+                        error.response?.data?.error ||
+                        error.message ||
+                        "Could not refresh topic review status."
+                    );
+                }
+            }
+        };
+        const intervalId = window.setInterval(refreshReviews, 30000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(intervalId);
+        };
+    }, []);
+
     const [openTopics, setOpenTopics] = useState(() => ({
         [belt.topics[0]?.id]: true,
     }));
 
+    const getReviewForTopic = (topic) =>
+        reviewRequests.find(
+            (review) => review.belt_id === belt.id && review.topic_id === topic.id
+        );
+
     const topicStatus = (topic) =>
-        getTopicProgress(topicProgress, problemProgress, topic);
+        getTopicProgress(
+            topicProgress,
+            problemProgress,
+            topic,
+            getReviewForTopic(topic)
+        );
 
     const currentTopicStatus = (topic) =>
         getTopicProgress(
             progressRef.current.topicProgress,
             progressRef.current.problemProgress,
-            topic
+            topic,
+            getReviewForTopic(topic)
         );
 
+    const topicIsUnlocked = (topic) => {
+        const topicIndex = belt.topics.findIndex((item) => item.id === topic.id);
+        return topicIndex <= 0 || topicStatus(belt.topics[topicIndex - 1]).completed;
+    };
+
     const updateTopicProgress = (topic, changes) => {
+        const status = currentTopicStatus(topic);
+        if (
+            !topicIsUnlocked(topic) ||
+            status.completed ||
+            status.reviewStatus === "pending"
+        ) {
+            return;
+        }
+
         const nextTopicProgress = {
-            ...currentTopicStatus(topic),
+            ...status,
             ...changes,
         };
 
@@ -148,7 +216,6 @@ export default function BeltPage({
         const optimisticProgress = {
             topicProgress: nextTopicMap,
             problemProgress: nextProblemMap,
-            beltProgress: progressRef.current.beltProgress,
         };
         const saveRevision = saveRevisionRef.current + 1;
         saveRevisionRef.current = saveRevision;
@@ -182,13 +249,11 @@ export default function BeltPage({
                 const finalProgress = {
                     topicProgress: savedProgress.topicProgress,
                     problemProgress: savedProgress.problemProgress,
-                    beltProgress: savedProgress.beltProgress,
                 };
                 if (saveRevision === saveRevisionRef.current) {
                     progressRef.current = finalProgress;
                     setTopicProgress(finalProgress.topicProgress);
                     setProblemProgress(finalProgress.problemProgress);
-                    setBeltProgress(finalProgress.beltProgress);
                 }
             })
             .catch((error) => {
@@ -198,12 +263,9 @@ export default function BeltPage({
             });
     };
 
-    const previousBeltSavedProgress = previousBelt
-        ? beltProgress[`belt_${previousBelt.id}`]
-        : null;
     const isLocked =
         locked &&
-        (!previousBeltSavedProgress?.completed ||
+        (!previousBelt ||
             !previousBelt.topics.every(
                 (topic) => topicStatus(topic).completed
             ));
@@ -215,12 +277,7 @@ export default function BeltPage({
     const completedTopics = belt.topics.filter(
         (topic) => topicStatus(topic).completed
     ).length;
-    const savedBeltProgress = beltProgress[`belt_${belt.id}`] || {};
-    const beltPercentage = Number.isFinite(
-        savedBeltProgress.completionPercentage
-    )
-        ? savedBeltProgress.completionPercentage
-        : (completedTopics / belt.topics.length) * 100;
+    const beltPercentage = (completedTopics / belt.topics.length) * 100;
 
     const toggleTopic = (topicId) => {
         setOpenTopics((previous) => ({
@@ -232,7 +289,12 @@ export default function BeltPage({
     const toggleProblem = (topic, problemIndex, checked) => {
         const status = currentTopicStatus(topic);
 
-        if (!status.learned || status.completed) return;
+        if (
+            !topicIsUnlocked(topic) ||
+            !status.learned ||
+            status.completed ||
+            status.reviewStatus === "pending"
+        ) return;
 
         const solved = new Set(status.solvedProblems);
 
@@ -250,7 +312,7 @@ export default function BeltPage({
         });
     };
 
-    const completeTopic = (topic) => {
+    const completeTopic = async (topic) => {
         const status = topicStatus(topic);
         const problemIds = getTopicProblemIds(topic);
 
@@ -258,11 +320,37 @@ export default function BeltPage({
             (_, index) => status.solvedProblems.includes(problemIds[index])
         );
 
-        if (!status.learned || !allProblemsSolved) return;
+        if (
+            !topicIsUnlocked(topic) ||
+            !status.learned ||
+            status.completed ||
+            status.reviewStatus === "pending" ||
+            !allProblemsSolved
+        ) return;
 
-        updateTopicProgress(topic, {
-            completed: true,
-        });
+        setSubmittingTopicId(topic.id);
+        setProgressError("");
+        try {
+            await saveQueueRef.current;
+            const review = await submitPracticeTopicForReview(belt.id, topic.id);
+            if (!review) {
+                throw new Error("The topic review request was not returned by the server.");
+            }
+            setReviewRequests((current) => [
+                review,
+                ...current.filter(
+                    (item) => !(item.belt_id === belt.id && item.topic_id === topic.id && item.status === "pending")
+                ),
+            ]);
+        } catch (error) {
+            setProgressError(
+                error.response?.data?.error ||
+                error.message ||
+                "Could not submit this topic for mentor review."
+            );
+        } finally {
+            setSubmittingTopicId(null);
+        }
     };
 
     return (
@@ -311,6 +399,11 @@ export default function BeltPage({
                     {progressError}
                 </p>
             )}
+            {reviewError && (
+                <p className="practise-help-text" role="alert">
+                    {reviewError}
+                </p>
+            )}
 
             <section className="practise-open-belt">
                 <header className="practise-open-belt-header">
@@ -346,6 +439,8 @@ export default function BeltPage({
                     <div className="practise-topic-list">
                         {belt.topics.map((topic, index) => {
                             const status = topicStatus(topic);
+                            const review = getReviewForTopic(topic);
+                            const topicLocked = !topicIsUnlocked(topic);
                             const expanded = Boolean(openTopics[topic.id]);
 
                             const learningResources = topic.resources.filter(
@@ -391,7 +486,11 @@ export default function BeltPage({
 
                                             <small>
                                                 {status.completed
-                                                    ? "Topic completed ✓"
+                                                    ? "Mentor approved ✓"
+                                                    : status.reviewStatus === "pending"
+                                                        ? "Waiting for mentor review"
+                                                        : status.reviewStatus === "rejected"
+                                                            ? "Mentor requested changes"
                                                     : status.learned
                                                         ? `${status.solvedProblems.length}/${topic.problems.length} problems completed`
                                                         : "Learning resources and practice"}
@@ -405,6 +504,29 @@ export default function BeltPage({
 
                                     {expanded && (
                                         <div className="practise-topic-body">
+                                            {topicLocked && (
+                                                <div className="practise-locked-message">
+                                                    <strong>This topic is locked.</strong>
+                                                    <span>
+                                                        Your mentor must approve{" "}
+                                                        {belt.topics[index - 1]?.title || "the previous topic"} before you can continue.
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            {status.reviewStatus === "pending" && (
+                                                <div className="practise-locked-message">
+                                                    Your submission is waiting for mentor review. You can continue after it is approved.
+                                                </div>
+                                            )}
+
+                                            {status.reviewStatus === "rejected" && review?.mentor_note && (
+                                                <div className="practise-locked-message">
+                                                    <strong>Mentor feedback</strong>
+                                                    <span>{review.mentor_note}</span>
+                                                </div>
+                                            )}
+
                                             <section className="practise-resource-section">
                                                 <h3>1. Learning Resources</h3>
 
@@ -439,6 +561,8 @@ export default function BeltPage({
                                                             className="practise-primary-button"
                                                             disabled={
                                                                 progressLoading ||
+                                                                topicLocked ||
+                                                                status.reviewStatus === "pending" ||
                                                                 !userId
                                                             }
                                                             onClick={() =>
@@ -499,7 +623,9 @@ export default function BeltPage({
                                                                                     checked={solved}
                                                                                     disabled={
                                                                                         progressLoading ||
-                                                                                        status.completed
+                                                                                        status.completed ||
+                                                                                        topicLocked ||
+                                                                                        status.reviewStatus === "pending"
                                                                                     }
                                                                                     onChange={(event) =>
                                                                                         toggleProblem(
@@ -554,7 +680,10 @@ export default function BeltPage({
                                                             className="practise-primary-button"
                                                             disabled={
                                                                 progressLoading ||
+                                                                topicLocked ||
                                                                 status.completed ||
+                                                                status.reviewStatus === "pending" ||
+                                                                submittingTopicId === topic.id ||
                                                                 !allProblemsSolved
                                                             }
                                                             onClick={() =>
@@ -562,11 +691,18 @@ export default function BeltPage({
                                                             }
                                                         >
                                                             {status.completed
-                                                                ? "Topic Completed ✓"
-                                                                : "Complete Topic"}
+                                                                ? "Mentor Approved ✓"
+                                                                : status.reviewStatus === "pending"
+                                                                    ? "Waiting for Mentor Review"
+                                                                    : submittingTopicId === topic.id
+                                                                        ? "Submitting..."
+                                                                        : status.reviewStatus === "rejected"
+                                                                            ? "Resubmit for Mentor Review"
+                                                                            : "Submit for Mentor Review"}
                                                         </button>
 
                                                         {!status.completed &&
+                                                            status.reviewStatus !== "pending" &&
                                                             !allProblemsSolved && (
                                                                 <p className="practise-help-text">
                                                                     Complete all
@@ -580,7 +716,7 @@ export default function BeltPage({
 
                                             {status.completed && (
                                                 <div className="practise-success">
-                                                    ✓ You completed {topic.title}!
+                                                    ✓ Your mentor approved {topic.title}.
                                                 </div>
                                             )}
                                         </div>

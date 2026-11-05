@@ -77,6 +77,21 @@ const requireRole = (...allowedRoles) => (req, res, next) => {
 
 const requireStudent = requireRole("student");
 
+function practiceTopicReviewSetupError(error) {
+    const message = String(error?.message || "");
+    const missingSchema =
+        error?.code === "42P01" ||
+        error?.code === "42883" ||
+        error?.code === "PGRST202" ||
+        error?.code === "PGRST205" ||
+        message.includes("practice_topic_reviews") ||
+        message.includes("submit_practice_topic_for_review");
+
+    return missingSchema
+        ? "Topic reviews are not set up in Supabase yet. Ask your administrator to run docs/practise_topic_review_migration.sql after the practice-progress migration."
+        : null;
+}
+
 // Monthly quota of LeetCode exception requests per student (calendar month,
 // UTC — same clock the DB's NOW() uses). Shared by the POST route (enforce)
 // and the GET route (report, so the form can disable itself up front).
@@ -1113,5 +1128,56 @@ router.get(
         }
     }
 );
+
+// ==========================================
+// PRACTICE TOPIC MENTOR REVIEWS
+// ==========================================
+router.get("/practice-topic-reviews", authRouteLimiter, requireAuth, requireStudent, async (req, res) => {
+    try {
+        const { data: reviews, error } = await req.authedSupabase
+            .from("practice_topic_reviews")
+            .select("id, belt_id, topic_id, status, mentor_note, reviewed_at, created_at")
+            .eq("student_user_id", req.user.id)
+            .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        return res.status(200).json({ reviews: reviews || [] });
+    } catch (error) {
+        console.error("Fetch student practice topic reviews error:", error);
+        return res.status(500).json({
+            error: practiceTopicReviewSetupError(error) || "Could not load topic review status.",
+        });
+    }
+});
+
+router.post("/practice-topic-reviews", authRouteLimiter, requireAuth, requireStudent, async (req, res) => {
+    const beltId = Number(req.body?.belt_id);
+    const topicId = req.body?.topic_id;
+
+    if (!Number.isInteger(beltId) || typeof topicId !== "string" || !topicId.trim()) {
+        return res.status(400).json({ error: "A valid belt and topic are required." });
+    }
+
+    try {
+        const { data: review, error } = await req.authedSupabase.rpc(
+            "submit_practice_topic_for_review",
+            { p_belt_id: beltId, p_topic_id: topicId }
+        );
+
+        if (error) {
+            const message = error.message || "Could not submit this topic for review.";
+            const setupError = practiceTopicReviewSetupError(error);
+            if (setupError) return res.status(503).json({ error: setupError });
+            const status = error.code === "P0001" ? 400 : 500;
+            if (status === 500) console.error("Submit practice topic review error:", error);
+            return res.status(status).json({ error: message });
+        }
+
+        return res.status(201).json({ success: true, review });
+    } catch (error) {
+        console.error("Submit practice topic review error:", error);
+        return res.status(500).json({ error: "Could not submit this topic for review." });
+    }
+});
 
 export default router;

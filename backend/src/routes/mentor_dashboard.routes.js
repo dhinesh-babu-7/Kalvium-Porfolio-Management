@@ -67,6 +67,63 @@ const requireRole = (...allowedRoles) => (req, res, next) => {
 
 const requireMentor = requireRole("mentor");
 
+function practiceTopicReviewSetupError(error) {
+  const message = String(error?.message || "");
+  const missingSchema =
+    error?.code === "42P01" ||
+    error?.code === "42883" ||
+    error?.code === "PGRST202" ||
+    error?.code === "PGRST205" ||
+    message.includes("practice_topic_reviews") ||
+    message.includes("practice_topic_order") ||
+    message.includes("review_practice_topic_request");
+
+  return missingSchema
+    ? "Topic reviews are not set up in Supabase yet. Run docs/practise_topic_review_migration.sql after the practice-progress migration."
+    : null;
+}
+
+async function getMentorPracticeReviewAssignments(db, mentorUserId) {
+  const [
+    { data: directAssignments, error: assignmentError },
+    { data: mentorSquads, error: squadError },
+  ] = await Promise.all([
+    db
+      .from("squad_students")
+      .select("squad_id, student_user_id")
+      .eq("mentor_user_id", mentorUserId),
+    db
+      .from("mentor_squads")
+      .select("squad_id")
+      .eq("mentor_user_id", mentorUserId),
+  ]);
+
+  if (assignmentError) throw assignmentError;
+  if (squadError) throw squadError;
+
+  const squadIds = [...new Set((mentorSquads || []).map(({ squad_id }) => String(squad_id)))];
+  const squadStudents = squadIds.length
+    ? await db
+      .from("profiles")
+      .select("user_id, squad_id")
+      .in("squad_id", squadIds)
+    : { data: [], error: null };
+
+  if (squadStudents.error) throw squadStudents.error;
+
+  const assignmentsByStudent = new Map();
+  for (const assignment of [
+    ...(directAssignments || []),
+    ...(squadStudents.data || []).map(({ user_id, squad_id }) => ({
+      student_user_id: user_id,
+      squad_id,
+    })),
+  ]) {
+    assignmentsByStudent.set(String(assignment.student_user_id), assignment);
+  }
+  return [...assignmentsByStudent.values()];
+}
+
 // ==========================================
 // HELPER: NORMALIZE STUDENT ACTIVITY FIELDS
 // ==========================================
@@ -424,6 +481,158 @@ router.get("/assigned-students", requireAuth, requireMentor, async (req, res) =>
   } catch (error) {
     console.error("Server Error:", error);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/practice-topic-reviews/count", requireAuth, requireMentor, async (req, res) => {
+  try {
+    const db = req.authedSupabase;
+    const assignments = await getMentorPracticeReviewAssignments(db, req.user.id);
+    const studentIds = [...new Set(assignments.map(({ student_user_id }) => student_user_id))];
+    if (!studentIds.length) return res.status(200).json({ pendingCount: 0 });
+
+    const { count, error } = await db
+      .from("practice_topic_reviews")
+      .select("id", { count: "exact", head: true })
+      .in("student_user_id", studentIds)
+      .eq("status", "pending");
+
+    if (error) throw error;
+    return res.status(200).json({ pendingCount: count || 0 });
+  } catch (error) {
+    console.error("Fetch pending practice topic review count error:", error);
+    return res.status(500).json({
+      error: practiceTopicReviewSetupError(error) || "Could not load pending topic review count.",
+    });
+  }
+});
+
+router.get("/practice-topic-reviews", requireAuth, requireMentor, async (req, res) => {
+  try {
+    const db = req.authedSupabase;
+    const assignments = await getMentorPracticeReviewAssignments(db, req.user.id);
+    const assignmentByStudent = new Map(
+      assignments.map((assignment) => [
+        String(assignment.student_user_id),
+        assignment,
+      ])
+    );
+    const studentIds = [...assignmentByStudent.keys()];
+    if (!studentIds.length) return res.status(200).json({ requests: [], assignedStudentCount: 0 });
+
+    const reviewFields = "id, student_user_id, belt_id, topic_id, status, mentor_note, reviewed_at, created_at";
+    const [
+      { data: pendingReviews, error: pendingReviewError },
+      { data: reviewHistory, error: reviewHistoryError },
+    ] = await Promise.all([
+      db
+        .from("practice_topic_reviews")
+        .select(reviewFields)
+        .in("student_user_id", studentIds)
+        .eq("status", "pending")
+        .order("created_at", { ascending: true }),
+      db
+        .from("practice_topic_reviews")
+        .select(reviewFields)
+        .in("student_user_id", studentIds)
+        .neq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(200),
+    ]);
+
+    if (pendingReviewError) throw pendingReviewError;
+    if (reviewHistoryError) throw reviewHistoryError;
+    const reviews = [...(pendingReviews || []), ...(reviewHistory || [])];
+    if (!reviews?.length) {
+      return res.status(200).json({ requests: [], assignedStudentCount: studentIds.length });
+    }
+    reviews.sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+
+    const reviewedStudentIds = [...new Set(reviews.map(({ student_user_id }) => String(student_user_id)))];
+    const [
+      { data: profiles, error: profileError },
+      { data: progress, error: progressError },
+    ] = await Promise.all([
+      db
+        .from("profiles")
+        .select("user_id, name, kalvium_email, personal_email, avatar_url")
+        .in("user_id", reviewedStudentIds),
+      db
+        .from("practise_progress")
+        .select("user_id, problem_progress")
+        .in("user_id", reviewedStudentIds),
+    ]);
+
+    if (profileError) throw profileError;
+    if (progressError) throw progressError;
+
+    const profilesByStudent = new Map(
+      (profiles || []).map((profile) => [String(profile.user_id), profile])
+    );
+    const progressByStudent = new Map(
+      (progress || []).map((row) => [String(row.user_id), row.problem_progress || {}])
+    );
+
+    return res.status(200).json({
+      assignedStudentCount: studentIds.length,
+      requests: reviews.map((review) => {
+        const studentId = String(review.student_user_id);
+        const profile = profilesByStudent.get(studentId) || {};
+        const assignment = assignmentByStudent.get(studentId);
+
+        return {
+          ...review,
+          student_name: profile.name || profile.kalvium_email || profile.personal_email || "Student",
+          student_email: profile.kalvium_email || profile.personal_email || "",
+          student_avatar: profile.avatar_url || "",
+          squad_id: assignment?.squad_id ?? null,
+          problem_progress: progressByStudent.get(studentId) || {},
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("Fetch practice topic reviews error:", error);
+    return res.status(500).json({
+      error: practiceTopicReviewSetupError(error) || "Could not load practice topic reviews.",
+    });
+  }
+});
+
+router.patch("/practice-topic-reviews/:id", requireAuth, requireMentor, async (req, res) => {
+  const { id } = req.params;
+  const { decision, mentor_note: mentorNote = "" } = req.body || {};
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    return res.status(400).json({ error: "Invalid topic review request ID." });
+  }
+  if (!["approved", "rejected"].includes(decision)) {
+    return res.status(400).json({ error: "Decision must be approved or rejected." });
+  }
+
+  try {
+    const { data: review, error } = await req.authedSupabase.rpc(
+      "review_practice_topic_request",
+      {
+        p_request_id: id,
+        p_decision: decision,
+        p_mentor_note: typeof mentorNote === "string" ? mentorNote : "",
+      }
+    );
+
+    if (error) {
+      const message = error.message || "Could not update topic review.";
+      const setupError = practiceTopicReviewSetupError(error);
+      if (setupError) return res.status(503).json({ error: setupError });
+      const status = message.includes("not assigned") ? 403
+        : message.includes("not found") ? 404
+          : error.code === "P0001" ? 409 : 500;
+      if (status === 500) console.error("Decide practice topic review error:", error);
+      return res.status(status).json({ error: message });
+    }
+
+    return res.status(200).json({ success: true, review });
+  } catch (error) {
+    console.error("Decide practice topic review error:", error);
+    return res.status(500).json({ error: "Could not update topic review." });
   }
 });
 
