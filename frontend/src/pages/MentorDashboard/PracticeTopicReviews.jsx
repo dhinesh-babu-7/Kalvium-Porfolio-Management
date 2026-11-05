@@ -399,13 +399,22 @@ function BeltLevelsImport({ onError }) {
       </header>
       {result && (
         <div className="belt-import-result" role="status">
-          Updated {result.updated.length} · Skipped {result.skipped.length} · Invalid {result.invalid.length}
+          <strong>
+            Updated {result.updated.length} assigned squad members
+          </strong>
           {(result.skipped.length || result.invalid.length) > 0 && (
             <details>
-              <summary>View skipped or invalid rows</summary>
-              {[...result.skipped, ...result.invalid].map((item) => (
+              <summary>
+                {result.skipped.length} skipped · {result.invalid.length} invalid
+              </summary>
+              {[...result.skipped, ...result.invalid].slice(0, 20).map((item) => (
                 <div key={`${item.row}-${item.reason}`}>Row {item.row}: {item.reason}</div>
               ))}
+              {result.skipped.length + result.invalid.length > 20 && (
+                <small>
+                  Showing 20 of {result.skipped.length + result.invalid.length} skipped or invalid rows.
+                </small>
+              )}
             </details>
           )}
         </div>

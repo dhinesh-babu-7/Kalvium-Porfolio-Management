@@ -224,14 +224,29 @@
 }
 
 .belt-import-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px 18px;
   color: #334155;
   font-size: 13px;
 }
 
 .belt-import-result details {
-  margin-top: 8px;
+  max-width: 100%;
   color: #b45309;
+}
+
+.belt-import-result details div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.belt-import-result details small {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
 }
 
 .topic-reviews-retry {
