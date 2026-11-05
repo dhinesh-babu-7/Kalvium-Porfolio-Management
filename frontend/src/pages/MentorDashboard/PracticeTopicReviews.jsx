@@ -372,6 +372,7 @@ function BeltLevelsImport({ onError }) {
     if (!file) return;
     setUploading(true);
     setResult(null);
+    onError("");
     try {
       const rows = await readBeltLevelRows(file);
       if (!rows.length) throw new Error("The selected file has no data rows.");

@@ -702,6 +702,12 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
   }
 
   try {
+    if (!supabaseAdmin) {
+      return res.status(503).json({
+        error: "Belt-level imports are unavailable because the server database service is not configured.",
+      });
+    }
+
     const assignments = await getMentorPracticeReviewAssignments(req.authedSupabase, req.user.id);
     const assignedIds = new Set(assignments.map(({ student_user_id }) => String(student_user_id)));
     if (!assignedIds.size) {
@@ -722,6 +728,7 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
     }
 
     const results = { updated: [], skipped: [], invalid: [] };
+    const updates = [];
     for (const [index, row] of rows.entries()) {
       const email = String(
         row?.email ?? row?.kalvium_email ?? row?.student_email ?? row?.Email ?? ""
@@ -747,22 +754,19 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
       }
 
       const assessedLevelUpdate = {
+        user_id: profile.user_id,
         final_belt_levels: levels,
         final_belt_levels_updated_at: new Date().toISOString(),
       };
-      const { data: updatedRows, error: updateError } = await supabaseAdmin
-        .from("practise_progress")
-        .update(assessedLevelUpdate)
-        .eq("user_id", profile.user_id)
-        .select("user_id");
-      if (updateError) throw updateError;
-      if (!updatedRows?.length) {
-        const { error: insertError } = await supabaseAdmin
-          .from("practise_progress")
-          .insert({ user_id: profile.user_id, ...assessedLevelUpdate });
-        if (insertError) throw insertError;
-      }
+      updates.push(assessedLevelUpdate);
       results.updated.push({ row: index + 2, email });
+    }
+
+    if (updates.length) {
+      const { error: updateError } = await supabaseAdmin
+        .from("practise_progress")
+        .upsert(updates, { onConflict: "user_id" });
+      if (updateError) throw updateError;
     }
 
     return res.status(200).json({ success: true, results });
