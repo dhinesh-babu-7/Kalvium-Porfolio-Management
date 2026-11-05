@@ -15,6 +15,15 @@ import {
 
 const PRACTICE_SUBMISSION_FORM_URL =
     "https://docs.google.com/forms/d/e/1FAIpQLSfgwEYtQIB3u4A2IhhUTPGuEshXdV5NhphDbWt6HBn7y5eWMA/viewform";
+const BELT_NAMES = [
+    "Yellow Belt",
+    "Orange Belt",
+    "Green Belt",
+    "Purple Belt",
+    "Blue Belt",
+    "Brown Belt",
+    "Senior Brown Belt",
+];
 
 function getTopicProgress(topicProgress, problemProgress, topic, review) {
     const saved = topicProgress[topic.id] || {};
@@ -291,6 +300,10 @@ export default function BeltPage({
         (topic) => topicStatus(topic).completed
     ).length;
     const beltPercentage = (completedTopics / belt.topics.length) * 100;
+    const assessedBeltLevel = Object.values(beltLevels)
+        .map(Number)
+        .filter((level) => Number.isInteger(level) && level >= 1 && level <= BELT_NAMES.length)
+        .reduce((highest, level) => Math.max(highest, level), 0);
 
     const toggleTopic = (topicId) => {
         setOpenTopics((previous) => ({
@@ -370,7 +383,8 @@ export default function BeltPage({
         <div className="practise-page">
             <section className="assessed-belt-levels" aria-label="Assessed belt levels">
                 <div>
-                    <h2>Assessed belt levels</h2>
+                    <span className="assessed-belt-eyebrow">MENTOR ASSESSMENT</span>
+                    <h2>{assessedBeltLevel ? BELT_NAMES[assessedBeltLevel - 1] : "Assessed belt levels"}</h2>
                     <p>
                         {beltLevelsUpdatedAt
                             ? `Last updated ${new Date(beltLevelsUpdatedAt).toLocaleDateString()}`
@@ -379,7 +393,10 @@ export default function BeltPage({
                 </div>
                 <div className="assessed-belt-level-list">
                     {Object.entries(beltLevels).length ? Object.entries(beltLevels).map(([language, level]) => (
-                        <span key={language}>{language}: <strong>{String(level)}</strong></span>
+                        <span key={language}>
+                            <strong>{language.toUpperCase()}</strong>
+                            <b>Level {String(level)}</b>
+                        </span>
                     )) : <span>No assessed levels available</span>}
                 </div>
             </section>

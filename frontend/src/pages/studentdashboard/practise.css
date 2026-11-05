@@ -804,9 +804,18 @@
     margin: 0;
 }
 
+.assessed-belt-eyebrow {
+    display: block;
+    margin-bottom: 4px;
+    color: #2563eb;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+}
+
 .assessed-belt-levels h2 {
     color: #1e3a8a;
-    font-size: 16px;
+    font-size: 20px;
 }
 
 .assessed-belt-levels p,
@@ -822,10 +831,22 @@
 }
 
 .assessed-belt-level-list span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     padding: 7px 10px;
     border-radius: 999px;
     background: #fff;
     color: #1e40af;
+}
+
+.assessed-belt-level-list strong {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+}
+
+.assessed-belt-level-list b {
+    font-size: 12px;
 }
 
 @media (max-width: 700px) {
