@@ -763,10 +763,36 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
     }
 
     if (updates.length) {
-      const { error: updateError } = await supabaseAdmin
+      const { data: existingProgress, error: existingProgressError } = await supabaseAdmin
         .from("practise_progress")
-        .upsert(updates, { onConflict: "user_id" });
-      if (updateError) throw updateError;
+        .select("user_id")
+        .in("user_id", updates.map(({ user_id }) => user_id));
+      if (existingProgressError) throw existingProgressError;
+
+      const existingIds = new Set((existingProgress || []).map(({ user_id }) => String(user_id)));
+      const updateRows = updates.filter(({ user_id }) => existingIds.has(String(user_id)));
+      const insertRows = updates.filter(({ user_id }) => !existingIds.has(String(user_id)));
+
+      for (let start = 0; start < updateRows.length; start += 25) {
+        const batch = updateRows.slice(start, start + 25);
+        const batchResults = await Promise.all(
+          batch.map(({ user_id, final_belt_levels, final_belt_levels_updated_at }) =>
+            supabaseAdmin
+              .from("practise_progress")
+              .update({ final_belt_levels, final_belt_levels_updated_at })
+              .eq("user_id", user_id)
+          )
+        );
+        const failedUpdate = batchResults.find(({ error }) => error);
+        if (failedUpdate?.error) throw failedUpdate.error;
+      }
+
+      if (insertRows.length) {
+        const { error: insertError } = await supabaseAdmin
+          .from("practise_progress")
+          .insert(insertRows);
+        if (insertError) throw insertError;
+      }
     }
 
     return res.status(200).json({ success: true, results });
