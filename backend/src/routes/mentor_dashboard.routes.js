@@ -83,6 +83,40 @@ function practiceTopicReviewSetupError(error) {
     : null;
 }
 
+function isMissingProgressColumnError(error) {
+  const message = String(error?.message || "");
+  return error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    message.includes("final_belt_levels") ||
+    message.includes("final_belt_levels_updated_at");
+}
+
+async function loadPracticeProgressRows(db, studentIds, fields = "user_id, problem_progress") {
+  const extendedFields = `${fields}, final_belt_levels, final_belt_levels_updated_at`;
+  const extended = await db
+    .from("practise_progress")
+    .select(extendedFields)
+    .in("user_id", studentIds);
+
+  if (!extended.error || !isMissingProgressColumnError(extended.error)) {
+    return extended;
+  }
+
+  const fallback = await db
+    .from("practise_progress")
+    .select(fields)
+    .in("user_id", studentIds);
+  if (fallback.error) return fallback;
+  return {
+    data: (fallback.data || []).map((row) => ({
+      ...row,
+      final_belt_levels: {},
+      final_belt_levels_updated_at: null,
+    })),
+    error: null,
+  };
+}
+
 async function getMentorPracticeReviewAssignments(db, mentorUserId) {
   const [
     { data: directAssignments, error: assignmentError },
@@ -557,10 +591,7 @@ router.get("/practice-topic-reviews", requireAuth, requireMentor, async (req, re
         .from("profiles")
         .select("user_id, name, kalvium_email, personal_email, avatar_url")
         .in("user_id", reviewedStudentIds),
-      db
-        .from("practise_progress")
-        .select("user_id, problem_progress, final_belt_levels, final_belt_levels_updated_at")
-        .in("user_id", reviewedStudentIds),
+      loadPracticeProgressRows(db, reviewedStudentIds),
     ]);
 
     if (profileError) throw profileError;
@@ -640,11 +671,14 @@ router.patch("/practice-topic-reviews/:id", requireAuth, requireMentor, async (r
       return res.status(status).json({ error: message });
     }
 
-    const { data: progress, error: progressError } = await req.authedSupabase
-      .from("practise_progress")
-      .select("user_id, final_belt_levels, final_belt_levels_updated_at")
-      .eq("user_id", review.student_user_id)
-      .maybeSingle();
+    const { data: progress, error: progressError } = await loadPracticeProgressRows(
+      req.authedSupabase,
+      [review.student_user_id],
+      "user_id"
+    ).then((result) => ({
+      data: result.data?.[0] || null,
+      error: result.error,
+    }));
     if (progressError) throw progressError;
 
     return res.status(200).json({
@@ -764,10 +798,11 @@ router.get("/practice-progress", requireAuth, requireMentor, async (req, res) =>
         .from("profiles")
         .select("user_id, name, kalvium_email, personal_email, avatar_url")
         .in("user_id", studentIds),
-      db
-        .from("practise_progress")
-        .select("user_id, belt_progress, topic_progress, problem_progress, final_belt_levels, final_belt_levels_updated_at")
-        .in("user_id", studentIds),
+      loadPracticeProgressRows(
+        db,
+        studentIds,
+        "user_id, belt_progress, topic_progress, problem_progress"
+      ),
     ]);
 
     if (profileError) {
