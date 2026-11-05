@@ -1,7 +1,5 @@
 import { supabase } from "./supabase.js";
 
-const STORAGE_KEY = "kalvium-practise-progress-v1";
-
 export const BELT_TOPIC_TOTALS = {
     1: 7,
     2: 6,
@@ -30,20 +28,6 @@ function normalizeProgressMap(value) {
         }
     }
     return asObject(value);
-}
-
-function readLegacyProgress() {
-    try {
-        const saved = window.localStorage.getItem(STORAGE_KEY);
-        const parsed = saved ? JSON.parse(saved) : {};
-
-        return asObject(parsed);
-    } catch (error) {
-        throw new Error(
-            "Could not read the old practice progress for migration.",
-            { cause: error }
-        );
-    }
 }
 
 async function getCurrentUser() {
@@ -102,40 +86,9 @@ async function loadProgressRow(userId) {
         };
 }
 
-function hasSavedDatabaseProgress(progress) {
-    return Object.keys(progress.beltProgress).length > 0 ||
-        Object.keys(progress.topicProgress).length > 0 ||
-        Object.keys(progress.problemProgress).length > 0;
-}
-
-async function migrateLegacyProgressIfNeeded(progress) {
-    const legacyProgress = readLegacyProgress();
-
-    if (
-        Object.keys(legacyProgress).length === 0 ||
-        hasSavedDatabaseProgress(progress)
-    ) {
-        return false;
-    }
-
-    const { error } = await supabase.rpc("merge_legacy_practice_progress", {
-        p_progress: legacyProgress,
-    });
-
-    if (error) throw error;
-
-    // Keep the key until the database-backed flow has been verified.
-    return true;
-}
-
 export async function loadPracticeProgress() {
     const user = await getCurrentUser();
-    let progress = await loadProgressRow(user.id);
-    const migrated = await migrateLegacyProgressIfNeeded(progress);
-
-    if (migrated) {
-        progress = await loadProgressRow(user.id);
-    }
+    const progress = await loadProgressRow(user.id);
 
     return {
         userId: user.id,
@@ -174,5 +127,3 @@ export function getTopicProblemIds(topic) {
             return match?.[1] || null;
         });
 }
-
-export { STORAGE_KEY };
