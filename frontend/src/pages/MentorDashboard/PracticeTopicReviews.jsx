@@ -62,7 +62,9 @@ function readBeltLevelRows(file) {
         return match?.[1] ?? "";
       };
       return {
-        email: findValue(["email", "kalvium_email", "student_email"]),
+        email: findValue(["email", "email_id", "kalvium_email", "student_email", "student email"]),
+        squad: findValue(["squad", "squad_id", "squad_number", "squad number"]),
+        name: findValue(["name", "student_name", "student name"]),
         final_belt_levels: findValue(["final_belt_levels", "final belt levels"]),
       };
     });
@@ -390,7 +392,7 @@ function BeltLevelsImport({ onError }) {
       <header>
         <div>
           <h2>Update student belt levels</h2>
-          <p>Upload CSV/XLSX with an email column and a final_belt_levels JSON column.</p>
+          <p>Upload CSV/XLSX with email, optional squad, and final_belt_levels JSON columns.</p>
         </div>
         <label className="topic-review-upload">
           {uploading ? "Importing..." : "Choose CSV or Excel"}

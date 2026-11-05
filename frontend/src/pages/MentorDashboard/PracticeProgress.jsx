@@ -88,8 +88,17 @@ function getCurrentBelt(student) {
   ) || BELTS[BELTS.length - 1];
 }
 
+function getAssessedLevelSummary(student) {
+  const levels = student.progress?.final_belt_levels;
+  if (!levels || typeof levels !== "object" || Array.isArray(levels)) return "";
+  return Object.entries(levels)
+    .map(([language, level]) => `${language}: ${String(level)}`)
+    .join(" · ");
+}
+
 function StudentPracticeStats({ student, belt, onClose }) {
   const stats = getBeltStats(student, belt);
+  const assessedLevelSummary = getAssessedLevelSummary(student);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -130,6 +139,11 @@ function StudentPracticeStats({ student, belt, onClose }) {
             <div className="practice-progress-belt-copy">
               <span className="practice-progress-eyebrow">CURRENT BELT</span>
               <h4>{belt.title} · {belt.subtitle}</h4>
+              {assessedLevelSummary && (
+                <small className="practice-progress-assessed-levels">
+                  Assessed: {assessedLevelSummary}
+                </small>
+              )}
               <span className={stats.completed ? "practice-progress-complete-label" : "practice-progress-in-progress-label"}>
                 {stats.completed ? "Belt completed" : "In progress"}
               </span>
@@ -278,6 +292,7 @@ export default function PracticeProgress() {
               {filteredStudents.map((student) => {
                 const currentBelt = getCurrentBelt(student);
                 const stats = getBeltStats(student, currentBelt);
+                const assessedLevelSummary = getAssessedLevelSummary(student);
 
                 return (
                   <tr key={student.student_user_id}>
@@ -305,6 +320,11 @@ export default function PracticeProgress() {
                         <span>
                           <strong>{currentBelt.title}</strong>
                           <small>{currentBelt.subtitle}</small>
+                          {assessedLevelSummary && (
+                            <small className="practice-progress-assessed-levels">
+                              Assessed: {assessedLevelSummary}
+                            </small>
+                          )}
                         </span>
                       </span>
                     </td>

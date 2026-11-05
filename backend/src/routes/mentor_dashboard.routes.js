@@ -716,23 +716,45 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
 
     const { data: profiles, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("user_id, kalvium_email, personal_email")
+      .select("user_id, kalvium_email, personal_email, name, squad_id")
       .in("user_id", [...assignedIds]);
     if (profileError) throw profileError;
 
     const profileByEmail = new Map();
+    const profileByEmailAndSquad = new Map();
+    const profileBySquadAndName = new Map();
+    const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+    const normalizeSquad = (value) => String(value || "").replace(/\D/g, "");
+    const normalizeName = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
     for (const profile of profiles || []) {
       for (const email of [profile.kalvium_email, profile.personal_email]) {
-        if (email) profileByEmail.set(String(email).trim().toLowerCase(), profile);
+        const normalizedEmail = normalizeEmail(email);
+        if (normalizedEmail) {
+          profileByEmail.set(normalizedEmail, profile);
+          if (profile.squad_id != null) {
+            profileByEmailAndSquad.set(`${normalizedEmail}|${normalizeSquad(profile.squad_id)}`, profile);
+          }
+        }
+      }
+      if (profile.squad_id != null && profile.name) {
+        profileBySquadAndName.set(
+          `${normalizeSquad(profile.squad_id)}|${normalizeName(profile.name)}`,
+          profile
+        );
       }
     }
 
     const results = { updated: [], skipped: [], invalid: [] };
     const updates = [];
     for (const [index, row] of rows.entries()) {
-      const email = String(
-        row?.email ?? row?.kalvium_email ?? row?.student_email ?? row?.Email ?? ""
-      ).trim().toLowerCase();
+      const email = normalizeEmail(
+        row?.email ?? row?.email_id ?? row?.kalvium_email ?? row?.student_email ??
+        row?.studentEmail ?? row?.Email ?? ""
+      );
+      const squad = normalizeSquad(
+        row?.squad ?? row?.squad_id ?? row?.squad_number ?? row?.["squad number"] ?? ""
+      );
+      const studentName = normalizeName(row?.name ?? row?.student_name ?? row?.studentName);
       const rawLevels = row?.final_belt_levels ?? row?.finalBeltLevels ?? row?.["final_belt_levels"];
       let levels = rawLevels;
       if (typeof levels === "string") {
@@ -747,9 +769,17 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
         results.invalid.push({ row: index + 2, email, reason: "Email and a JSON object in final_belt_levels are required." });
         continue;
       }
-      const profile = profileByEmail.get(email);
+      const profile = (
+        (email && squad && profileByEmailAndSquad.get(`${email}|${squad}`)) ||
+        (email && profileByEmail.get(email)) ||
+        (squad && studentName && profileBySquadAndName.get(`${squad}|${studentName}`))
+      );
       if (!profile || !assignedIds.has(String(profile.user_id))) {
-        results.skipped.push({ row: index + 2, email, reason: "Student is not assigned to you." });
+        results.skipped.push({
+          row: index + 2,
+          email,
+          reason: email || squad ? "Student email/squad does not match an assigned student." : "Email or squad is required.",
+        });
         continue;
       }
 
