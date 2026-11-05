@@ -785,34 +785,38 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
         continue;
       }
 
-      const assessedLevelUpdate = {
-        user_id: profile.user_id,
-        final_belt_levels: levels,
-        final_belt_levels_updated_at: new Date().toISOString(),
-      };
       const studentKey = String(profile.user_id);
       const existing = updatesByStudent.get(studentKey);
       const candidateTime = Date.parse(sourceTimestamp || "");
       const existingTime = Date.parse(existing?.sourceTimestamp || "");
-      if (
-        !existing ||
-        (Number.isFinite(candidateTime) && !Number.isFinite(existingTime)) ||
-        (Number.isFinite(candidateTime) && Number.isFinite(existingTime) && candidateTime > existingTime)
-      ) {
-        updatesByStudent.set(studentKey, {
-          ...assessedLevelUpdate,
-          sourceTimestamp: Number.isFinite(candidateTime)
+      const mergedLevels = Object.fromEntries(
+        Object.entries({
+          ...(existing?.final_belt_levels || {}),
+          ...levels,
+        }).map(([language, level]) => [
+          language,
+          Math.max(
+            Number(existing?.final_belt_levels?.[language]) || 0,
+            Number(level) || 0
+          ),
+        ])
+      );
+      updatesByStudent.set(studentKey, {
+        user_id: profile.user_id,
+        final_belt_levels: mergedLevels,
+        sourceTimestamp:
+          Number.isFinite(candidateTime) &&
+          (!Number.isFinite(existingTime) || candidateTime > existingTime)
             ? new Date(candidateTime).toISOString()
-            : "",
-          row: index + 2,
-          email,
-        });
-      }
+            : (existing?.sourceTimestamp || ""),
+        row: index + 2,
+        email,
+      });
     }
 
     const updates = [...updatesByStudent.values()].map(({ sourceTimestamp, row, email, ...update }) => ({
       ...update,
-      final_belt_levels_updated_at: sourceTimestamp || update.final_belt_levels_updated_at,
+      final_belt_levels_updated_at: sourceTimestamp || new Date().toISOString(),
       sourceTimestamp,
       sourceRow: row,
       sourceEmail: email,
@@ -821,34 +825,43 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
     if (updates.length) {
       const { data: existingProgress, error: existingProgressError } = await supabaseAdmin
         .from("practise_progress")
-        .select("user_id, final_belt_levels_updated_at")
+        .select("user_id, final_belt_levels, final_belt_levels_updated_at")
         .in("user_id", updates.map(({ user_id }) => user_id));
       if (existingProgressError) throw existingProgressError;
 
       const existingById = new Map(
         (existingProgress || []).map((row) => [String(row.user_id), row])
       );
-      const acceptedUpdates = updates.filter((candidate) => {
+      const acceptedUpdates = updates.map((candidate) => {
         const existing = existingById.get(String(candidate.user_id));
-        const candidateTime = Date.parse(candidate.sourceTimestamp || "");
+        const existingLevels = existing?.final_belt_levels || {};
+        const mergedLevels = Object.fromEntries(
+          Object.entries({
+            ...existingLevels,
+            ...candidate.final_belt_levels,
+          }).map(([language, level]) => [
+            language,
+            Math.max(
+              Number(existingLevels[language]) || 0,
+              Number(level) || 0
+            ),
+          ])
+        );
         const existingTime = Date.parse(existing?.final_belt_levels_updated_at || "");
-        const isNewer = !Number.isFinite(candidateTime) ||
-          !Number.isFinite(existingTime) ||
-          candidateTime >= existingTime;
-
-        if (!isNewer) {
-          results.skipped.push({
-            row: candidate.sourceRow,
-            email: candidate.sourceEmail,
-            reason: "An assessment with a newer timestamp is already stored.",
-          });
-        } else {
-          results.updated.push({
-            row: candidate.sourceRow,
-            email: candidate.sourceEmail,
-          });
-        }
-        return isNewer;
+        const candidateTime = Date.parse(candidate.sourceTimestamp || "");
+        const latestTimestamp = Number.isFinite(candidateTime) &&
+          (!Number.isFinite(existingTime) || candidateTime > existingTime)
+          ? candidate.final_belt_levels_updated_at
+          : (existing?.final_belt_levels_updated_at || candidate.final_belt_levels_updated_at);
+        results.updated.push({
+          row: candidate.sourceRow,
+          email: candidate.sourceEmail,
+        });
+        return {
+          ...candidate,
+          final_belt_levels: mergedLevels,
+          final_belt_levels_updated_at: latestTimestamp,
+        };
       });
       const updateRows = acceptedUpdates.filter(({ user_id }) =>
         existingById.has(String(user_id))
