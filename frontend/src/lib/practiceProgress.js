@@ -21,6 +21,14 @@ function asObject(value) {
 }
 
 function normalizeProgressMap(value) {
+    if (typeof value === "string") {
+        try {
+            const parsed = JSON.parse(value);
+            return asObject(parsed);
+        } catch {
+            return {};
+        }
+    }
     return asObject(value);
 }
 

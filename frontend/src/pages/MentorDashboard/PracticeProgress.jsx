@@ -37,6 +37,22 @@ function getTopicProgress(student) {
     : {};
 }
 
+function getFinalBeltLevels(student) {
+  const rawLevels = student.progress?.final_belt_levels;
+  if (rawLevels && typeof rawLevels === "object" && !Array.isArray(rawLevels)) {
+    return rawLevels;
+  }
+  if (typeof rawLevels === "string") {
+    try {
+      const parsed = JSON.parse(rawLevels);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 function getSolvedProblemIndexes(student, topic) {
   const topicProgress = student.progress?.problem_progress?.[topic.id];
   if (!topicProgress || typeof topicProgress !== "object" || Array.isArray(topicProgress)) {
@@ -82,6 +98,16 @@ function getBeltStats(student, belt) {
 }
 
 function getCurrentBelt(student) {
+  const assessedLevels = getFinalBeltLevels(student);
+  const assessedBeltLevel = Object.values(assessedLevels)
+    .map(Number)
+    .filter((level) => Number.isInteger(level) && level >= 1 && level <= BELTS.length)
+    .reduce((highest, level) => Math.max(highest, level), 0);
+
+  if (assessedBeltLevel > 0) {
+    return BELTS[assessedBeltLevel - 1];
+  }
+
   const topicProgress = getTopicProgress(student);
   return BELTS.find((belt) =>
     !belt.topics.every((topic) => topicProgress[topic.id]?.completed === true)
@@ -89,8 +115,7 @@ function getCurrentBelt(student) {
 }
 
 function getAssessedLevelSummary(student) {
-  const levels = student.progress?.final_belt_levels;
-  if (!levels || typeof levels !== "object" || Array.isArray(levels)) return "";
+  const levels = getFinalBeltLevels(student);
   return Object.entries(levels)
     .map(([language, level]) => `${language}: ${String(level)}`)
     .join(" · ");
