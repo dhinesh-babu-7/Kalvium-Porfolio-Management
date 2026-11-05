@@ -52,7 +52,20 @@ function readBeltLevelRows(file) {
   return file.arrayBuffer().then((buffer) => {
     const workbook = XLSX.read(buffer, { type: "array" });
     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    return XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+    const sourceRows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+    return sourceRows.map((row) => {
+      const entries = Object.entries(row);
+      const findValue = (names) => {
+        const match = entries.find(([key]) =>
+          names.includes(String(key).trim().toLowerCase())
+        );
+        return match?.[1] ?? "";
+      };
+      return {
+        email: findValue(["email", "kalvium_email", "student_email"]),
+        final_belt_levels: findValue(["final_belt_levels", "final belt levels"]),
+      };
+    });
   });
 }
 
