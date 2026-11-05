@@ -140,10 +140,19 @@ export default function BeltPage({
         [belt.topics[0]?.id]: true,
     }));
 
-    const getReviewForTopic = (topic) =>
-        reviewRequests.find(
+    const getReviewForTopic = (topic) => {
+        const matchingReviews = reviewRequests.filter(
             (review) => review.belt_id === belt.id && review.topic_id === topic.id
         );
+        return matchingReviews.sort((left, right) => {
+            const statusRank = { approved: 3, pending: 2, rejected: 1 };
+            const rankDifference =
+                (statusRank[right.status] || 0) - (statusRank[left.status] || 0);
+            if (rankDifference !== 0) return rankDifference;
+            return Date.parse(right.reviewed_at || right.created_at || "") -
+                Date.parse(left.reviewed_at || left.created_at || "");
+        })[0];
+    };
 
     const topicStatus = (topic) =>
         getTopicProgress(

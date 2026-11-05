@@ -788,9 +788,27 @@ router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMe
       }
 
       if (insertRows.length) {
+        const { data: approvedReviews, error: approvedReviewsError } = await supabaseAdmin
+          .from("practice_topic_reviews")
+          .select("student_user_id, topic_id")
+          .in("student_user_id", insertRows.map(({ user_id }) => user_id))
+          .eq("status", "approved");
+        if (approvedReviewsError) throw approvedReviewsError;
+
+        const approvedTopicsByStudent = new Map();
+        for (const review of approvedReviews || []) {
+          const studentId = String(review.student_user_id);
+          const topics = approvedTopicsByStudent.get(studentId) || {};
+          topics[review.topic_id] = { completed: true };
+          approvedTopicsByStudent.set(studentId, topics);
+        }
+
         const { error: insertError } = await supabaseAdmin
           .from("practise_progress")
-          .insert(insertRows);
+          .insert(insertRows.map((row) => ({
+            ...row,
+            topic_progress: approvedTopicsByStudent.get(String(row.user_id)) || {},
+          })));
         if (insertError) throw insertError;
       }
     }
