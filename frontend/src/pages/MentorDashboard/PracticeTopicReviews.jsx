@@ -15,7 +15,9 @@ import {
 import {
   decidePracticeTopicReview,
   getPracticeTopicReviews,
+  importStudentBeltLevels,
 } from "../../api/routes/MentorDashboard/practiceTopicReviews.js";
+import * as XLSX from "xlsx";
 import { getTopicProblemIds } from "../../lib/practiceProgress.js";
 import Belt1 from "../studentdashboard/belts/Belt1.jsx";
 import Belt2 from "../studentdashboard/belts/Belt2.jsx";
@@ -44,6 +46,14 @@ function formatTime(value) {
 
 function getErrorMessage(error) {
   return error?.response?.data?.error || error?.message || "Could not load topic reviews.";
+}
+
+function readBeltLevelRows(file) {
+  return file.arrayBuffer().then((buffer) => {
+    const workbook = XLSX.read(buffer, { type: "array" });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+  });
 }
 
 function ReviewCard({ request, note, onNoteChange, onDecision, acting }) {
@@ -79,6 +89,9 @@ function ReviewCard({ request, note, onNoteChange, onDecision, acting }) {
           <span>{request.belt_id ? `Belt ${request.belt_id}` : "Practice belt"} · {topic?.beltTitle || "Student Dojo"}</span>
           <h2>{topic?.title || request.topic_id}</h2>
           <p>Submitted {formatTime(request.created_at)}</p>
+          <a className="topic-review-inline-sheet" href={PRACTICE_SUBMISSIONS_SHEET_URL} target="_blank" rel="noopener noreferrer">
+            Open response sheet <ExternalLink size={13} />
+          </a>
         </div>
 
         <div className="topic-review-problems">
@@ -246,13 +259,15 @@ export default function PracticeTopicReviews() {
         <header>
           <div>
             <h2>Student video submissions</h2>
-            <p>Open the submission sheet to review student videos.</p>
+            <p>Open the submission sheet to review student videos before deciding.</p>
           </div>
           <a href={PRACTICE_SUBMISSIONS_SHEET_URL} target="_blank" rel="noopener noreferrer">
             Open submission sheet <ExternalLink size={15} />
           </a>
         </header>
       </section>
+
+      <BeltLevelsImport onError={setError} />
 
       {loading ? (
         <div className="topic-reviews-state">Loading topic reviews...</div>
@@ -331,5 +346,56 @@ export default function PracticeTopicReviews() {
         </div>
       )}
     </div>
+  );
+}
+
+function BeltLevelsImport({ onError }) {
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    setResult(null);
+    try {
+      const rows = await readBeltLevelRows(file);
+      if (!rows.length) throw new Error("The selected file has no data rows.");
+      const response = await importStudentBeltLevels(rows);
+      setResult(response.results);
+    } catch (error) {
+      onError(getErrorMessage(error));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <section className="topic-review-sheet belt-level-import">
+      <header>
+        <div>
+          <h2>Update student belt levels</h2>
+          <p>Upload CSV/XLSX with an email column and a final_belt_levels JSON column.</p>
+        </div>
+        <label className="topic-review-upload">
+          {uploading ? "Importing..." : "Choose CSV or Excel"}
+          <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFile} disabled={uploading} />
+        </label>
+      </header>
+      {result && (
+        <div className="belt-import-result" role="status">
+          Updated {result.updated.length} · Skipped {result.skipped.length} · Invalid {result.invalid.length}
+          {(result.skipped.length || result.invalid.length) > 0 && (
+            <details>
+              <summary>View skipped or invalid rows</summary>
+              {[...result.skipped, ...result.invalid].map((item) => (
+                <div key={`${item.row}-${item.reason}`}>Row {item.row}: {item.reason}</div>
+              ))}
+            </details>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

@@ -559,7 +559,7 @@ router.get("/practice-topic-reviews", requireAuth, requireMentor, async (req, re
         .in("user_id", reviewedStudentIds),
       db
         .from("practise_progress")
-        .select("user_id, problem_progress")
+        .select("user_id, problem_progress, final_belt_levels, final_belt_levels_updated_at")
         .in("user_id", reviewedStudentIds),
     ]);
 
@@ -570,7 +570,14 @@ router.get("/practice-topic-reviews", requireAuth, requireMentor, async (req, re
       (profiles || []).map((profile) => [String(profile.user_id), profile])
     );
     const progressByStudent = new Map(
-      (progress || []).map((row) => [String(row.user_id), row.problem_progress || {}])
+      (progress || []).map((row) => [
+        String(row.user_id),
+        {
+          problem_progress: row.problem_progress || {},
+          final_belt_levels: row.final_belt_levels || {},
+          final_belt_levels_updated_at: row.final_belt_levels_updated_at || null,
+        },
+      ])
     );
 
     return res.status(200).json({
@@ -586,7 +593,11 @@ router.get("/practice-topic-reviews", requireAuth, requireMentor, async (req, re
           student_email: profile.kalvium_email || profile.personal_email || "",
           student_avatar: profile.avatar_url || "",
           squad_id: assignment?.squad_id ?? null,
-          problem_progress: progressByStudent.get(studentId) || {},
+          ...(progressByStudent.get(studentId) || {
+            problem_progress: {},
+            final_belt_levels: {},
+            final_belt_levels_updated_at: null,
+          }),
         };
       }),
     });
@@ -629,10 +640,101 @@ router.patch("/practice-topic-reviews/:id", requireAuth, requireMentor, async (r
       return res.status(status).json({ error: message });
     }
 
-    return res.status(200).json({ success: true, review });
+    const { data: progress, error: progressError } = await req.authedSupabase
+      .from("practise_progress")
+      .select("user_id, final_belt_levels, final_belt_levels_updated_at")
+      .eq("user_id", review.student_user_id)
+      .maybeSingle();
+    if (progressError) throw progressError;
+
+    return res.status(200).json({
+      success: true,
+      review: {
+        ...review,
+        final_belt_levels: progress?.final_belt_levels || {},
+        final_belt_levels_updated_at: progress?.final_belt_levels_updated_at || null,
+      },
+    });
   } catch (error) {
     console.error("Decide practice topic review error:", error);
     return res.status(500).json({ error: "Could not update topic review." });
+  }
+});
+
+router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMentor, async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!rows.length || rows.length > 1000) {
+    return res.status(400).json({ error: "Upload between 1 and 1000 student rows." });
+  }
+
+  try {
+    const assignments = await getMentorPracticeReviewAssignments(req.authedSupabase, req.user.id);
+    const assignedIds = new Set(assignments.map(({ student_user_id }) => String(student_user_id)));
+    if (!assignedIds.size) {
+      return res.status(403).json({ error: "You do not have any assigned students to update." });
+    }
+
+    const { data: profiles, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id, kalvium_email, personal_email")
+      .in("user_id", [...assignedIds]);
+    if (profileError) throw profileError;
+
+    const profileByEmail = new Map();
+    for (const profile of profiles || []) {
+      for (const email of [profile.kalvium_email, profile.personal_email]) {
+        if (email) profileByEmail.set(String(email).trim().toLowerCase(), profile);
+      }
+    }
+
+    const results = { updated: [], skipped: [], invalid: [] };
+    for (const [index, row] of rows.entries()) {
+      const email = String(
+        row?.email ?? row?.kalvium_email ?? row?.student_email ?? row?.Email ?? ""
+      ).trim().toLowerCase();
+      const rawLevels = row?.final_belt_levels ?? row?.finalBeltLevels ?? row?.["final_belt_levels"];
+      let levels = rawLevels;
+      if (typeof levels === "string") {
+        try {
+          levels = JSON.parse(levels);
+        } catch {
+          results.invalid.push({ row: index + 2, email, reason: "final_belt_levels is not valid JSON." });
+          continue;
+        }
+      }
+      if (!email || !levels || Array.isArray(levels) || typeof levels !== "object") {
+        results.invalid.push({ row: index + 2, email, reason: "Email and a JSON object in final_belt_levels are required." });
+        continue;
+      }
+      const profile = profileByEmail.get(email);
+      if (!profile || !assignedIds.has(String(profile.user_id))) {
+        results.skipped.push({ row: index + 2, email, reason: "Student is not assigned to you." });
+        continue;
+      }
+
+      const assessedLevelUpdate = {
+        final_belt_levels: levels,
+        final_belt_levels_updated_at: new Date().toISOString(),
+      };
+      const { data: updatedRows, error: updateError } = await supabaseAdmin
+        .from("practise_progress")
+        .update(assessedLevelUpdate)
+        .eq("user_id", profile.user_id)
+        .select("user_id");
+      if (updateError) throw updateError;
+      if (!updatedRows?.length) {
+        const { error: insertError } = await supabaseAdmin
+          .from("practise_progress")
+          .insert({ user_id: profile.user_id, ...assessedLevelUpdate });
+        if (insertError) throw insertError;
+      }
+      results.updated.push({ row: index + 2, email });
+    }
+
+    return res.status(200).json({ success: true, results });
+  } catch (error) {
+    console.error("Import student belt levels error:", error);
+    return res.status(500).json({ error: "Could not import student belt levels." });
   }
 });
 
@@ -664,7 +766,7 @@ router.get("/practice-progress", requireAuth, requireMentor, async (req, res) =>
         .in("user_id", studentIds),
       db
         .from("practise_progress")
-        .select("user_id, belt_progress, topic_progress, problem_progress")
+        .select("user_id, belt_progress, topic_progress, problem_progress, final_belt_levels, final_belt_levels_updated_at")
         .in("user_id", studentIds),
     ]);
 
@@ -688,6 +790,8 @@ router.get("/practice-progress", requireAuth, requireMentor, async (req, res) =>
         belt_progress: row.belt_progress || {},
         topic_progress: row.topic_progress || {},
         problem_progress: row.problem_progress || {},
+        final_belt_levels: row.final_belt_levels || {},
+        final_belt_levels_updated_at: row.final_belt_levels_updated_at || null,
       });
     }
 
@@ -706,6 +810,8 @@ router.get("/practice-progress", requireAuth, requireMentor, async (req, res) =>
           belt_progress: {},
           topic_progress: {},
           problem_progress: {},
+          final_belt_levels: {},
+          final_belt_levels_updated_at: null,
         },
       };
     });

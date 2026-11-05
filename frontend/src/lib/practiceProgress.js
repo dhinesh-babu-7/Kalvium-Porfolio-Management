@@ -57,7 +57,7 @@ async function getCurrentUser() {
 async function loadProgressRow(userId) {
     const { data, error } = await supabase
         .from("practise_progress")
-        .select("belt_progress, topic_progress, problem_progress")
+        .select("belt_progress, topic_progress, problem_progress, final_belt_levels, final_belt_levels_updated_at")
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -68,11 +68,15 @@ async function loadProgressRow(userId) {
             beltProgress: normalizeProgressMap(data.belt_progress),
             topicProgress: normalizeProgressMap(data.topic_progress),
             problemProgress: normalizeProgressMap(data.problem_progress),
+            finalBeltLevels: normalizeProgressMap(data.final_belt_levels),
+            finalBeltLevelsUpdatedAt: data.final_belt_levels_updated_at || null,
         }
         : {
             beltProgress: {},
             topicProgress: {},
             problemProgress: {},
+            finalBeltLevels: {},
+            finalBeltLevelsUpdatedAt: null,
         };
 }
 

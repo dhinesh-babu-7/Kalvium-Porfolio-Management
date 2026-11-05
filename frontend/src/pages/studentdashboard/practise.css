@@ -788,3 +788,49 @@
     gap: 4px;
   }
 }
+.assessed-belt-levels {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 16px 18px;
+    border: 1px solid #dbeafe;
+    border-radius: 14px;
+    background: #eff6ff;
+}
+
+.assessed-belt-levels h2,
+.assessed-belt-levels p {
+    margin: 0;
+}
+
+.assessed-belt-levels h2 {
+    color: #1e3a8a;
+    font-size: 16px;
+}
+
+.assessed-belt-levels p,
+.assessed-belt-level-list {
+    color: #475569;
+    font-size: 12px;
+}
+
+.assessed-belt-level-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.assessed-belt-level-list span {
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: #fff;
+    color: #1e40af;
+}
+
+@media (max-width: 700px) {
+    .assessed-belt-levels {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

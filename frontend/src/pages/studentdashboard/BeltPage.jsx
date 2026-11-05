@@ -41,6 +41,8 @@ export default function BeltPage({
     const [topicProgress, setTopicProgress] = useState({});
     const [problemProgress, setProblemProgress] = useState({});
     const [reviewRequests, setReviewRequests] = useState([]);
+    const [beltLevels, setBeltLevels] = useState({});
+    const [beltLevelsUpdatedAt, setBeltLevelsUpdatedAt] = useState(null);
 
     const [userId, setUserId] = useState(null);
     const [progressLoading, setProgressLoading] = useState(true);
@@ -74,6 +76,8 @@ export default function BeltPage({
                 progressRef.current = nextProgress;
                 setTopicProgress(nextProgress.topicProgress);
                 setProblemProgress(nextProgress.problemProgress);
+                setBeltLevels(result.finalBeltLevels || {});
+                setBeltLevelsUpdatedAt(result.finalBeltLevelsUpdatedAt || null);
 
                 try {
                     setReviewRequests(await getStudentPracticeTopicReviews());
@@ -355,6 +359,21 @@ export default function BeltPage({
 
     return (
         <div className="practise-page">
+            <section className="assessed-belt-levels" aria-label="Assessed belt levels">
+                <div>
+                    <h2>Assessed belt levels</h2>
+                    <p>
+                        {beltLevelsUpdatedAt
+                            ? `Last updated ${new Date(beltLevelsUpdatedAt).toLocaleDateString()}`
+                            : "Your mentor has not uploaded assessed levels yet."}
+                    </p>
+                </div>
+                <div className="assessed-belt-level-list">
+                    {Object.entries(beltLevels).length ? Object.entries(beltLevels).map(([language, level]) => (
+                        <span key={language}>{language}: <strong>{String(level)}</strong></span>
+                    )) : <span>No assessed levels available</span>}
+                </div>
+            </section>
             <header className="practise-header">
                 <div>
                     <p className="practise-eyebrow">
