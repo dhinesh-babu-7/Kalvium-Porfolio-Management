@@ -15,7 +15,9 @@ import {
 import {
   decidePracticeTopicReview,
   getPracticeTopicReviews,
+  importStudentBeltLevels,
 } from "../../api/routes/MentorDashboard/practiceTopicReviews.js";
+import * as XLSX from "xlsx";
 import { getTopicProblemIds } from "../../lib/practiceProgress.js";
 import Belt1 from "../studentdashboard/belts/Belt1.jsx";
 import Belt2 from "../studentdashboard/belts/Belt2.jsx";
@@ -44,6 +46,29 @@ function formatTime(value) {
 
 function getErrorMessage(error) {
   return error?.response?.data?.error || error?.message || "Could not load topic reviews.";
+}
+
+function readBeltLevelRows(file) {
+  return file.arrayBuffer().then((buffer) => {
+    const workbook = XLSX.read(buffer, { type: "array" });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const sourceRows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+    return sourceRows.map((row) => {
+      const entries = Object.entries(row);
+      const findValue = (names) => {
+        const match = entries.find(([key]) =>
+          names.includes(String(key).trim().toLowerCase())
+        );
+        return match?.[1] ?? "";
+      };
+      return {
+        email: findValue(["email", "email_id", "kalvium_email", "student_email", "student email"]),
+        squad: findValue(["squad", "squad_id", "squad_number", "squad number"]),
+        name: findValue(["name", "student_name", "student name"]),
+        final_belt_levels: findValue(["final_belt_levels", "final belt levels"]),
+      };
+    });
+  });
 }
 
 function ReviewCard({ request, note, onNoteChange, onDecision, acting }) {
@@ -79,6 +104,9 @@ function ReviewCard({ request, note, onNoteChange, onDecision, acting }) {
           <span>{request.belt_id ? `Belt ${request.belt_id}` : "Practice belt"} · {topic?.beltTitle || "Student Dojo"}</span>
           <h2>{topic?.title || request.topic_id}</h2>
           <p>Submitted {formatTime(request.created_at)}</p>
+          <a className="topic-review-inline-sheet" href={PRACTICE_SUBMISSIONS_SHEET_URL} target="_blank" rel="noopener noreferrer">
+            Open response sheet <ExternalLink size={13} />
+          </a>
         </div>
 
         <div className="topic-review-problems">
@@ -246,13 +274,15 @@ export default function PracticeTopicReviews() {
         <header>
           <div>
             <h2>Student video submissions</h2>
-            <p>Open the submission sheet to review student videos.</p>
+            <p>Open the submission sheet to review student videos before deciding.</p>
           </div>
           <a href={PRACTICE_SUBMISSIONS_SHEET_URL} target="_blank" rel="noopener noreferrer">
             Open submission sheet <ExternalLink size={15} />
           </a>
         </header>
       </section>
+
+      <BeltLevelsImport onError={setError} />
 
       {loading ? (
         <div className="topic-reviews-state">Loading topic reviews...</div>
@@ -331,5 +361,66 @@ export default function PracticeTopicReviews() {
         </div>
       )}
     </div>
+  );
+}
+
+function BeltLevelsImport({ onError }) {
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    setResult(null);
+    onError("");
+    try {
+      const rows = await readBeltLevelRows(file);
+      if (!rows.length) throw new Error("The selected file has no data rows.");
+      const response = await importStudentBeltLevels(rows);
+      setResult(response.results);
+    } catch (error) {
+      onError(getErrorMessage(error));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <section className="topic-review-sheet belt-level-import">
+      <header>
+        <div>
+          <h2>Update student belt levels</h2>
+          <p>Upload CSV/XLSX with email, optional squad, and final_belt_levels JSON columns.</p>
+        </div>
+        <label className="topic-review-upload">
+          {uploading ? "Importing..." : "Choose CSV or Excel"}
+          <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFile} disabled={uploading} />
+        </label>
+      </header>
+      {result && (
+        <div className="belt-import-result" role="status">
+          <strong>
+            Updated {result.updated.length} assigned squad members
+          </strong>
+          {(result.skipped.length || result.invalid.length) > 0 && (
+            <details>
+              <summary>
+                {result.skipped.length} skipped · {result.invalid.length} invalid
+              </summary>
+              {[...result.skipped, ...result.invalid].slice(0, 20).map((item) => (
+                <div key={`${item.row}-${item.reason}`}>Row {item.row}: {item.reason}</div>
+              ))}
+              {result.skipped.length + result.invalid.length > 20 && (
+                <small>
+                  Showing 20 of {result.skipped.length + result.invalid.length} skipped or invalid rows.
+                </small>
+              )}
+            </details>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

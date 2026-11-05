@@ -24,6 +24,8 @@ export default function Practise() {
     const navigate = useNavigate();
     const [topicProgress, setTopicProgress] = useState({});
     const [beltProgress, setBeltProgress] = useState({});
+    const [beltLevels, setBeltLevels] = useState({});
+    const [beltLevelsUpdatedAt, setBeltLevelsUpdatedAt] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
@@ -31,10 +33,17 @@ export default function Practise() {
         let cancelled = false;
 
         loadPracticeProgress()
-            .then(({ topicProgress: savedTopics, beltProgress: savedBelts }) => {
+            .then(({
+                topicProgress: savedTopics,
+                beltProgress: savedBelts,
+                finalBeltLevels: savedLevels,
+                finalBeltLevelsUpdatedAt: updatedAt,
+            }) => {
                 if (!cancelled) {
                     setTopicProgress(savedTopics);
                     setBeltProgress(savedBelts);
+                    setBeltLevels(savedLevels || {});
+                    setBeltLevelsUpdatedAt(updatedAt || null);
                 }
             })
             .catch((loadError) => {
@@ -58,9 +67,15 @@ export default function Practise() {
         beltProgress[`belt_${belt.id}`]?.completed === true ||
         belt.topics.every((topic) => isTopicComplete(topicProgress, topic));
 
+    const assessedBeltLevel = Object.values(beltLevels)
+        .map(Number)
+        .filter((level) => Number.isInteger(level) && level >= 1 && level <= BELTS.length)
+        .reduce((highest, level) => Math.max(highest, level), 0);
+
     const isBeltUnlocked = (index) =>
         index === 0 ||
-        beltProgress[`belt_${index}`]?.completed === true;
+        beltProgress[`belt_${index}`]?.completed === true ||
+        index < assessedBeltLevel;
 
     const completedTopics = BELTS.reduce(
         (total, belt) =>
@@ -106,6 +121,24 @@ export default function Practise() {
                 </div>
             </header>
 
+            {assessedBeltLevel > 0 && (
+                <section className="practise-assessed-summary" aria-label="Mentor assessment">
+                    <div>
+                        <span className="practise-assessed-eyebrow">MENTOR ASSESSMENT</span>
+                        <strong>{BELTS[assessedBeltLevel - 1].title}</strong>
+                        <p>
+                            Your imported assessment is reflected here.
+                            {beltLevelsUpdatedAt
+                                ? ` Updated ${new Date(beltLevelsUpdatedAt).toLocaleDateString()}.`
+                                : ""}
+                        </p>
+                    </div>
+                    <span className="practise-assessed-level">
+                        Level {assessedBeltLevel}
+                    </span>
+                </section>
+            )}
+
             {loading && (
                 <p className="practise-help-text">
                     Loading your saved progress...
@@ -147,6 +180,8 @@ export default function Practise() {
                                         )
                                             ? beltSavedProgress.completionPercentage
                                             : (finishedCount / BELT_TOPIC_TOTALS[belt.id]) * 100;
+                                        const assessed = belt.id === assessedBeltLevel;
+                                        const assessedCompleted = belt.id < assessedBeltLevel;
 
                         return (
                             <button
@@ -156,6 +191,8 @@ export default function Practise() {
                                     "practise-belt-card",
                                     completed ? "completed" : "",
                                     !unlocked ? "locked" : "",
+                                    assessed ? "assessed" : "",
+                                    assessedCompleted ? "assessed-completed" : "",
                                 ].filter(Boolean).join(" ")}
                                 disabled={loading}
                                 onClick={() =>
@@ -167,7 +204,7 @@ export default function Practise() {
                                 <span className="practise-belt-card-top">
                                     <strong>{belt.title}</strong>
                                     <span className="practise-belt-icon">
-                                        {completed ? "✓" : unlocked ? "OPEN" : "🔒"}
+                                        {assessed ? "ASSESSED" : completed ? "✓" : unlocked ? "OPEN" : "🔒"}
                                     </span>
                                 </span>
                                 <span className="practise-belt-subtitle">

@@ -83,6 +83,40 @@ function practiceTopicReviewSetupError(error) {
     : null;
 }
 
+function isMissingProgressColumnError(error) {
+  const message = String(error?.message || "");
+  return error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    message.includes("final_belt_levels") ||
+    message.includes("final_belt_levels_updated_at");
+}
+
+async function loadPracticeProgressRows(db, studentIds, fields = "user_id, problem_progress") {
+  const extendedFields = `${fields}, final_belt_levels, final_belt_levels_updated_at`;
+  const extended = await db
+    .from("practise_progress")
+    .select(extendedFields)
+    .in("user_id", studentIds);
+
+  if (!extended.error || !isMissingProgressColumnError(extended.error)) {
+    return extended;
+  }
+
+  const fallback = await db
+    .from("practise_progress")
+    .select(fields)
+    .in("user_id", studentIds);
+  if (fallback.error) return fallback;
+  return {
+    data: (fallback.data || []).map((row) => ({
+      ...row,
+      final_belt_levels: {},
+      final_belt_levels_updated_at: null,
+    })),
+    error: null,
+  };
+}
+
 async function getMentorPracticeReviewAssignments(db, mentorUserId) {
   const [
     { data: directAssignments, error: assignmentError },
@@ -557,10 +591,7 @@ router.get("/practice-topic-reviews", requireAuth, requireMentor, async (req, re
         .from("profiles")
         .select("user_id, name, kalvium_email, personal_email, avatar_url")
         .in("user_id", reviewedStudentIds),
-      db
-        .from("practise_progress")
-        .select("user_id, problem_progress")
-        .in("user_id", reviewedStudentIds),
+      loadPracticeProgressRows(db, reviewedStudentIds),
     ]);
 
     if (profileError) throw profileError;
@@ -570,7 +601,14 @@ router.get("/practice-topic-reviews", requireAuth, requireMentor, async (req, re
       (profiles || []).map((profile) => [String(profile.user_id), profile])
     );
     const progressByStudent = new Map(
-      (progress || []).map((row) => [String(row.user_id), row.problem_progress || {}])
+      (progress || []).map((row) => [
+        String(row.user_id),
+        {
+          problem_progress: row.problem_progress || {},
+          final_belt_levels: row.final_belt_levels || {},
+          final_belt_levels_updated_at: row.final_belt_levels_updated_at || null,
+        },
+      ])
     );
 
     return res.status(200).json({
@@ -586,7 +624,11 @@ router.get("/practice-topic-reviews", requireAuth, requireMentor, async (req, re
           student_email: profile.kalvium_email || profile.personal_email || "",
           student_avatar: profile.avatar_url || "",
           squad_id: assignment?.squad_id ?? null,
-          problem_progress: progressByStudent.get(studentId) || {},
+          ...(progressByStudent.get(studentId) || {
+            problem_progress: {},
+            final_belt_levels: {},
+            final_belt_levels_updated_at: null,
+          }),
         };
       }),
     });
@@ -629,10 +671,182 @@ router.patch("/practice-topic-reviews/:id", requireAuth, requireMentor, async (r
       return res.status(status).json({ error: message });
     }
 
-    return res.status(200).json({ success: true, review });
+    const { data: progress, error: progressError } = await loadPracticeProgressRows(
+      req.authedSupabase,
+      [review.student_user_id],
+      "user_id"
+    ).then((result) => ({
+      data: result.data?.[0] || null,
+      error: result.error,
+    }));
+    if (progressError) throw progressError;
+
+    return res.status(200).json({
+      success: true,
+      review: {
+        ...review,
+        final_belt_levels: progress?.final_belt_levels || {},
+        final_belt_levels_updated_at: progress?.final_belt_levels_updated_at || null,
+      },
+    });
   } catch (error) {
     console.error("Decide practice topic review error:", error);
     return res.status(500).json({ error: "Could not update topic review." });
+  }
+});
+
+router.post("/practice-topic-reviews/belt-levels/import", requireAuth, requireMentor, async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!rows.length || rows.length > 1000) {
+    return res.status(400).json({ error: "Upload between 1 and 1000 student rows." });
+  }
+
+  try {
+    if (!supabaseAdmin) {
+      return res.status(503).json({
+        error: "Belt-level imports are unavailable because the server database service is not configured.",
+      });
+    }
+
+    const assignments = await getMentorPracticeReviewAssignments(req.authedSupabase, req.user.id);
+    const assignedIds = new Set(assignments.map(({ student_user_id }) => String(student_user_id)));
+    if (!assignedIds.size) {
+      return res.status(403).json({ error: "You do not have any assigned students to update." });
+    }
+
+    const { data: profiles, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id, kalvium_email, personal_email, name, squad_id")
+      .in("user_id", [...assignedIds]);
+    if (profileError) throw profileError;
+
+    const profileByEmail = new Map();
+    const profileByEmailAndSquad = new Map();
+    const profileBySquadAndName = new Map();
+    const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+    const normalizeSquad = (value) => String(value || "").replace(/\D/g, "");
+    const normalizeName = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+    for (const profile of profiles || []) {
+      for (const email of [profile.kalvium_email, profile.personal_email]) {
+        const normalizedEmail = normalizeEmail(email);
+        if (normalizedEmail) {
+          profileByEmail.set(normalizedEmail, profile);
+          if (profile.squad_id != null) {
+            profileByEmailAndSquad.set(`${normalizedEmail}|${normalizeSquad(profile.squad_id)}`, profile);
+          }
+        }
+      }
+      if (profile.squad_id != null && profile.name) {
+        profileBySquadAndName.set(
+          `${normalizeSquad(profile.squad_id)}|${normalizeName(profile.name)}`,
+          profile
+        );
+      }
+    }
+
+    const results = { updated: [], skipped: [], invalid: [] };
+    const updates = [];
+    for (const [index, row] of rows.entries()) {
+      const email = normalizeEmail(
+        row?.email ?? row?.email_id ?? row?.kalvium_email ?? row?.student_email ??
+        row?.studentEmail ?? row?.Email ?? ""
+      );
+      const squad = normalizeSquad(
+        row?.squad ?? row?.squad_id ?? row?.squad_number ?? row?.["squad number"] ?? ""
+      );
+      const studentName = normalizeName(row?.name ?? row?.student_name ?? row?.studentName);
+      const rawLevels = row?.final_belt_levels ?? row?.finalBeltLevels ?? row?.["final_belt_levels"];
+      let levels = rawLevels;
+      if (typeof levels === "string") {
+        try {
+          levels = JSON.parse(levels);
+        } catch {
+          results.invalid.push({ row: index + 2, email, reason: "final_belt_levels is not valid JSON." });
+          continue;
+        }
+      }
+      if (!email || !levels || Array.isArray(levels) || typeof levels !== "object") {
+        results.invalid.push({ row: index + 2, email, reason: "Email and a JSON object in final_belt_levels are required." });
+        continue;
+      }
+      const profile = (
+        (email && squad && profileByEmailAndSquad.get(`${email}|${squad}`)) ||
+        (email && profileByEmail.get(email)) ||
+        (squad && studentName && profileBySquadAndName.get(`${squad}|${studentName}`))
+      );
+      if (!profile || !assignedIds.has(String(profile.user_id))) {
+        results.skipped.push({
+          row: index + 2,
+          email,
+          reason: email || squad ? "Student email/squad does not match an assigned student." : "Email or squad is required.",
+        });
+        continue;
+      }
+
+      const assessedLevelUpdate = {
+        user_id: profile.user_id,
+        final_belt_levels: levels,
+        final_belt_levels_updated_at: new Date().toISOString(),
+      };
+      updates.push(assessedLevelUpdate);
+      results.updated.push({ row: index + 2, email });
+    }
+
+    if (updates.length) {
+      const { data: existingProgress, error: existingProgressError } = await supabaseAdmin
+        .from("practise_progress")
+        .select("user_id")
+        .in("user_id", updates.map(({ user_id }) => user_id));
+      if (existingProgressError) throw existingProgressError;
+
+      const existingIds = new Set((existingProgress || []).map(({ user_id }) => String(user_id)));
+      const updateRows = updates.filter(({ user_id }) => existingIds.has(String(user_id)));
+      const insertRows = updates.filter(({ user_id }) => !existingIds.has(String(user_id)));
+
+      for (let start = 0; start < updateRows.length; start += 25) {
+        const batch = updateRows.slice(start, start + 25);
+        const batchResults = await Promise.all(
+          batch.map(({ user_id, final_belt_levels, final_belt_levels_updated_at }) =>
+            supabaseAdmin
+              .from("practise_progress")
+              .update({ final_belt_levels, final_belt_levels_updated_at })
+              .eq("user_id", user_id)
+          )
+        );
+        const failedUpdate = batchResults.find(({ error }) => error);
+        if (failedUpdate?.error) throw failedUpdate.error;
+      }
+
+      if (insertRows.length) {
+        const { data: approvedReviews, error: approvedReviewsError } = await supabaseAdmin
+          .from("practice_topic_reviews")
+          .select("student_user_id, topic_id")
+          .in("student_user_id", insertRows.map(({ user_id }) => user_id))
+          .eq("status", "approved");
+        if (approvedReviewsError) throw approvedReviewsError;
+
+        const approvedTopicsByStudent = new Map();
+        for (const review of approvedReviews || []) {
+          const studentId = String(review.student_user_id);
+          const topics = approvedTopicsByStudent.get(studentId) || {};
+          topics[review.topic_id] = { completed: true };
+          approvedTopicsByStudent.set(studentId, topics);
+        }
+
+        const { error: insertError } = await supabaseAdmin
+          .from("practise_progress")
+          .insert(insertRows.map((row) => ({
+            ...row,
+            topic_progress: approvedTopicsByStudent.get(String(row.user_id)) || {},
+          })));
+        if (insertError) throw insertError;
+      }
+    }
+
+    return res.status(200).json({ success: true, results });
+  } catch (error) {
+    console.error("Import student belt levels error:", error);
+    return res.status(500).json({ error: "Could not import student belt levels." });
   }
 });
 
@@ -662,10 +876,11 @@ router.get("/practice-progress", requireAuth, requireMentor, async (req, res) =>
         .from("profiles")
         .select("user_id, name, kalvium_email, personal_email, avatar_url")
         .in("user_id", studentIds),
-      db
-        .from("practise_progress")
-        .select("user_id, belt_progress, topic_progress, problem_progress")
-        .in("user_id", studentIds),
+      loadPracticeProgressRows(
+        db,
+        studentIds,
+        "user_id, belt_progress, topic_progress, problem_progress"
+      ),
     ]);
 
     if (profileError) {
@@ -688,6 +903,8 @@ router.get("/practice-progress", requireAuth, requireMentor, async (req, res) =>
         belt_progress: row.belt_progress || {},
         topic_progress: row.topic_progress || {},
         problem_progress: row.problem_progress || {},
+        final_belt_levels: row.final_belt_levels || {},
+        final_belt_levels_updated_at: row.final_belt_levels_updated_at || null,
       });
     }
 
@@ -706,6 +923,8 @@ router.get("/practice-progress", requireAuth, requireMentor, async (req, res) =>
           belt_progress: {},
           topic_progress: {},
           problem_progress: {},
+          final_belt_levels: {},
+          final_belt_levels_updated_at: null,
         },
       };
     });

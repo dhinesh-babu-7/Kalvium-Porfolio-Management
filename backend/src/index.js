@@ -47,7 +47,9 @@ app.use(
   })
 );
 
-app.use(express.json());
+// Belt-level imports contain one JSON object per student. Keep the normal
+// request limit conservative while allowing a reasonably sized class upload.
+app.use(express.json({ limit: "10mb" }));
 
 app.use("/public", publicRoutes);
 app.use("/student/dashboard", dashboardRoutes);

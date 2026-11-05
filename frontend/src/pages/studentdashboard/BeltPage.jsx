@@ -15,6 +15,15 @@ import {
 
 const PRACTICE_SUBMISSION_FORM_URL =
     "https://docs.google.com/forms/d/e/1FAIpQLSfgwEYtQIB3u4A2IhhUTPGuEshXdV5NhphDbWt6HBn7y5eWMA/viewform";
+const BELT_NAMES = [
+    "Yellow Belt",
+    "Orange Belt",
+    "Green Belt",
+    "Purple Belt",
+    "Blue Belt",
+    "Brown Belt",
+    "Senior Brown Belt",
+];
 
 function getTopicProgress(topicProgress, problemProgress, topic, review) {
     const saved = topicProgress[topic.id] || {};
@@ -41,6 +50,8 @@ export default function BeltPage({
     const [topicProgress, setTopicProgress] = useState({});
     const [problemProgress, setProblemProgress] = useState({});
     const [reviewRequests, setReviewRequests] = useState([]);
+    const [beltLevels, setBeltLevels] = useState({});
+    const [beltLevelsUpdatedAt, setBeltLevelsUpdatedAt] = useState(null);
 
     const [userId, setUserId] = useState(null);
     const [progressLoading, setProgressLoading] = useState(true);
@@ -74,6 +85,8 @@ export default function BeltPage({
                 progressRef.current = nextProgress;
                 setTopicProgress(nextProgress.topicProgress);
                 setProblemProgress(nextProgress.problemProgress);
+                setBeltLevels(result.finalBeltLevels || {});
+                setBeltLevelsUpdatedAt(result.finalBeltLevelsUpdatedAt || null);
 
                 try {
                     setReviewRequests(await getStudentPracticeTopicReviews());
@@ -136,10 +149,19 @@ export default function BeltPage({
         [belt.topics[0]?.id]: true,
     }));
 
-    const getReviewForTopic = (topic) =>
-        reviewRequests.find(
+    const getReviewForTopic = (topic) => {
+        const matchingReviews = reviewRequests.filter(
             (review) => review.belt_id === belt.id && review.topic_id === topic.id
         );
+        return matchingReviews.sort((left, right) => {
+            const statusRank = { approved: 3, pending: 2, rejected: 1 };
+            const rankDifference =
+                (statusRank[right.status] || 0) - (statusRank[left.status] || 0);
+            if (rankDifference !== 0) return rankDifference;
+            return Date.parse(right.reviewed_at || right.created_at || "") -
+                Date.parse(left.reviewed_at || left.created_at || "");
+        })[0];
+    };
 
     const topicStatus = (topic) =>
         getTopicProgress(
@@ -278,6 +300,10 @@ export default function BeltPage({
         (topic) => topicStatus(topic).completed
     ).length;
     const beltPercentage = (completedTopics / belt.topics.length) * 100;
+    const assessedBeltLevel = Object.values(beltLevels)
+        .map(Number)
+        .filter((level) => Number.isInteger(level) && level >= 1 && level <= BELT_NAMES.length)
+        .reduce((highest, level) => Math.max(highest, level), 0);
 
     const toggleTopic = (topicId) => {
         setOpenTopics((previous) => ({
@@ -355,6 +381,25 @@ export default function BeltPage({
 
     return (
         <div className="practise-page">
+            <section className="assessed-belt-levels" aria-label="Assessed belt levels">
+                <div>
+                    <span className="assessed-belt-eyebrow">MENTOR ASSESSMENT</span>
+                    <h2>{assessedBeltLevel ? BELT_NAMES[assessedBeltLevel - 1] : "Assessed belt levels"}</h2>
+                    <p>
+                        {beltLevelsUpdatedAt
+                            ? `Last updated ${new Date(beltLevelsUpdatedAt).toLocaleDateString()}`
+                            : "Your mentor has not uploaded assessed levels yet."}
+                    </p>
+                </div>
+                <div className="assessed-belt-level-list">
+                    {Object.entries(beltLevels).length ? Object.entries(beltLevels).map(([language, level]) => (
+                        <span key={language}>
+                            <strong>{language.toUpperCase()}</strong>
+                            <b>Level {String(level)}</b>
+                        </span>
+                    )) : <span>No assessed levels available</span>}
+                </div>
+            </section>
             <header className="practise-header">
                 <div>
                     <p className="practise-eyebrow">

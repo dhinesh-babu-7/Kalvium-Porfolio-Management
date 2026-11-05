@@ -75,6 +75,18 @@
   font-size: 11px;
 }
 
+.practice-progress-assessed-levels {
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
+  margin-top: 2px;
+  color: #2563eb !important;
+  font-size: 10px !important;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .practice-progress-belt-count {
   display: inline-flex;
   align-items: center;

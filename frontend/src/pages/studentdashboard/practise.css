@@ -72,6 +72,58 @@
   background: #ffffff;
 }
 
+.practise-assessed-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 28px;
+    padding: 18px 22px;
+    border: 1px solid #bfdbfe;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #eff6ff, #ffffff);
+}
+
+.practise-assessed-eyebrow {
+    display: block;
+    margin-bottom: 4px;
+    color: #2563eb;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+}
+
+.practise-assessed-summary strong {
+    display: block;
+    color: #1e3a8a;
+    font-size: 20px;
+}
+
+.practise-assessed-summary p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.practise-assessed-level {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.practise-belt-card.assessed {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgb(37 99 235 / 12%);
+}
+
+.practise-belt-card.assessed-completed {
+    border-color: #93c5fd;
+}
+
 .practise-overall-progress > span {
   display: block;
   font-size: 12px;
@@ -787,4 +839,71 @@
   .practise-problem-actions {
     gap: 4px;
   }
+}
+.assessed-belt-levels {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 16px 18px;
+    border: 1px solid #dbeafe;
+    border-radius: 14px;
+    background: #eff6ff;
+}
+
+.assessed-belt-levels h2,
+.assessed-belt-levels p {
+    margin: 0;
+}
+
+.assessed-belt-eyebrow {
+    display: block;
+    margin-bottom: 4px;
+    color: #2563eb;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+}
+
+.assessed-belt-levels h2 {
+    color: #1e3a8a;
+    font-size: 20px;
+}
+
+.assessed-belt-levels p,
+.assessed-belt-level-list {
+    color: #475569;
+    font-size: 12px;
+}
+
+.assessed-belt-level-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.assessed-belt-level-list span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: #fff;
+    color: #1e40af;
+}
+
+.assessed-belt-level-list strong {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+}
+
+.assessed-belt-level-list b {
+    font-size: 12px;
+}
+
+@media (max-width: 700px) {
+    .assessed-belt-levels {
+        align-items: flex-start;
+        flex-direction: column;
+    }
 }

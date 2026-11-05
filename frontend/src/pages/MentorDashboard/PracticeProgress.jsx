@@ -37,6 +37,22 @@ function getTopicProgress(student) {
     : {};
 }
 
+function getFinalBeltLevels(student) {
+  const rawLevels = student.progress?.final_belt_levels;
+  if (rawLevels && typeof rawLevels === "object" && !Array.isArray(rawLevels)) {
+    return rawLevels;
+  }
+  if (typeof rawLevels === "string") {
+    try {
+      const parsed = JSON.parse(rawLevels);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 function getSolvedProblemIndexes(student, topic) {
   const topicProgress = student.progress?.problem_progress?.[topic.id];
   if (!topicProgress || typeof topicProgress !== "object" || Array.isArray(topicProgress)) {
@@ -82,14 +98,41 @@ function getBeltStats(student, belt) {
 }
 
 function getCurrentBelt(student) {
+  const assessedLevels = getFinalBeltLevels(student);
+  const assessedBeltLevel = Object.values(assessedLevels)
+    .map(Number)
+    .filter((level) => Number.isInteger(level) && level >= 1 && level <= BELTS.length)
+    .reduce((highest, level) => Math.max(highest, level), 0);
+
+  if (assessedBeltLevel > 0) {
+    return BELTS[assessedBeltLevel - 1];
+  }
+
   const topicProgress = getTopicProgress(student);
   return BELTS.find((belt) =>
     !belt.topics.every((topic) => topicProgress[topic.id]?.completed === true)
   ) || BELTS[BELTS.length - 1];
 }
 
+function getAssessedLevelSummary(student) {
+  const levels = getFinalBeltLevels(student);
+  return Object.entries(levels)
+    .map(([language, level]) => `${language}: ${String(level)}`)
+    .join(" · ");
+}
+
+function getAssessedBeltLabel(student) {
+  const levels = getFinalBeltLevels(student);
+  const highest = Object.values(levels)
+    .map(Number)
+    .filter((level) => Number.isInteger(level) && level >= 1 && level <= BELTS.length)
+    .reduce((max, level) => Math.max(max, level), 0);
+  return highest ? BELTS[highest - 1].title : "";
+}
+
 function StudentPracticeStats({ student, belt, onClose }) {
   const stats = getBeltStats(student, belt);
+  const assessedLevelSummary = getAssessedLevelSummary(student);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -130,6 +173,11 @@ function StudentPracticeStats({ student, belt, onClose }) {
             <div className="practice-progress-belt-copy">
               <span className="practice-progress-eyebrow">CURRENT BELT</span>
               <h4>{belt.title} · {belt.subtitle}</h4>
+              {assessedLevelSummary && (
+                <small className="practice-progress-assessed-levels">
+                  Assessed: {assessedLevelSummary}
+                </small>
+              )}
               <span className={stats.completed ? "practice-progress-complete-label" : "practice-progress-in-progress-label"}>
                 {stats.completed ? "Belt completed" : "In progress"}
               </span>
@@ -278,6 +326,8 @@ export default function PracticeProgress() {
               {filteredStudents.map((student) => {
                 const currentBelt = getCurrentBelt(student);
                 const stats = getBeltStats(student, currentBelt);
+                const assessedLevelSummary = getAssessedLevelSummary(student);
+                const assessedBeltLabel = getAssessedBeltLabel(student);
 
                 return (
                   <tr key={student.student_user_id}>
@@ -305,6 +355,11 @@ export default function PracticeProgress() {
                         <span>
                           <strong>{currentBelt.title}</strong>
                           <small>{currentBelt.subtitle}</small>
+                          {assessedLevelSummary && (
+                            <small className="practice-progress-assessed-levels">
+                              Assessed {assessedBeltLabel ? `${assessedBeltLabel} · ` : ""}{assessedLevelSummary}
+                            </small>
+                          )}
                         </span>
                       </span>
                     </td>
