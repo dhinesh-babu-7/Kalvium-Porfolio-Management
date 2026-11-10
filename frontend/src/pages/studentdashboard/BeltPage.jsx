@@ -5,6 +5,7 @@ import { studentTabPath } from "../MentorDashboard/dashboardRoutes.js";
 
 import {
     getTopicProblemIds,
+    getTopicBeltId,
     loadPracticeProgress,
     savePracticeTopicProgress,
 } from "../../lib/practiceProgress.js";
@@ -248,8 +249,9 @@ export default function BeltPage({
 
         saveQueueRef.current = saveQueueRef.current
             .then(async () => {
+                const topicBeltId = getTopicBeltId(topic.id);
                 const savedProgress = await savePracticeTopicProgress(
-                    belt.id,
+                    topicBeltId,
                     topic.id,
                     nextTopicProgress
                 );

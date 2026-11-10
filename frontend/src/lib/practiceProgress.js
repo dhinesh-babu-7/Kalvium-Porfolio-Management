@@ -10,6 +10,16 @@ export const BELT_TOPIC_TOTALS = {
     7: 5,
 };
 
+export function getTopicBeltId(topicId) {
+    const match = /^b([1-7])-(.+)$/.exec(topicId);
+
+    if (!match) {
+        throw new Error(`Invalid practice topic ID: ${topicId}`);
+    }
+
+    return Number(match[1]);
+}
+
 function asObject(value) {
     return value &&
         typeof value === "object" &&
@@ -97,10 +107,19 @@ export async function loadPracticeProgress() {
 }
 
 export async function savePracticeTopicProgress(beltId, topicId, status) {
+    const topicBeltId = getTopicBeltId(topicId);
+    const normalizedBeltId = Number(beltId);
+
+    if (normalizedBeltId !== topicBeltId) {
+        throw new Error(
+            `Practice topic ${topicId} belongs to Belt ${topicBeltId}, not Belt ${beltId}.`
+        );
+    }
+
     const { data, error } = await supabase.rpc(
         "save_practice_topic_progress",
         {
-            p_belt_id: beltId,
+            p_belt_id: topicBeltId,
             p_topic_id: topicId,
             p_learned: status.learned === true,
             p_solved_problems: Array.isArray(status.solvedProblems)
