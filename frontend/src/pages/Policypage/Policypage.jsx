@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import "./Policypage.css";
 
 const PrivacyPolicy = () => {
@@ -178,6 +178,9 @@ const PrivacyPolicy = () => {
 
             <h3>Changes to this Privacy Policy</h3>
             <p>We may update Our Privacy Policy from time to time. We will notify You of any changes by posting the new Privacy Policy on this page and updating the &quot;Last updated&quot; date at the top.</p>
+
+            <h2>Intellectual Property &amp; Prohibition of Unauthorized Replication</h2>
+            <p>All visual designs, dashboard interfaces, data structures, and underlying software of <strong>Kalvium Portfolio Management (KPM)</strong> are the proprietary property of <strong>Ashwath, Dhinesh Babu, Ashwin Raj, and Nithyanandharaj</strong>. Accessing this Website does not grant any express or implied license or right to copy, clone, scrape, reverse-engineer, or create derivative works from our UI/UX design, features, or source code without prior written permission from <a href="mailto:kpm-squad@googlegroups.com">kpm-squad@googlegroups.com</a>.</p>
 
             <h2>Contact Us</h2>
             <p>If You have any questions about this Privacy Policy, You can contact Us:</p>

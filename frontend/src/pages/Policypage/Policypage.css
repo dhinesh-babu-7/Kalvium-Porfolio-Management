@@ -61,12 +61,14 @@
 	font-size: 14px;
 }
 
-.privacy-policy ul {
+.privacy-policy ul,
+.privacy-policy ol {
 	margin: 8px 0 20px;
 	padding-left: 24px;
 }
 
-.privacy-policy > ul {
+.privacy-policy > ul,
+.privacy-policy > ol {
 	margin-right: auto;
 	margin-left: auto;
 }
@@ -115,5 +117,278 @@
 
 	.privacy-policy h3 {
 		font-size: 18px;
+	}
+}
+
+.license-page {
+	--license-ink: #17191c;
+	--license-muted: #68717b;
+	--license-red: #ed343b;
+	min-height: 520px;
+	padding: 48px 24px 72px;
+	background: #f1f3f5;
+	color: var(--license-ink);
+	font-family: 'Inter', sans-serif;
+}
+
+.license-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 240px;
+	gap: 20px 28px;
+	width: min(100%, 1040px);
+	margin: 0 auto;
+	animation: license-enter 400ms ease-out both;
+}
+
+.license-header {
+	grid-column: 1 / -1;
+	padding: 25px 32px 16px;
+	border-top: 4px solid var(--license-red);
+	background: #111214;
+	color: #fff;
+}
+
+.license-kicker,
+.license-heading-row,
+.license-document-meta {
+	display: flex;
+	align-items: center;
+}
+
+.license-kicker {
+	gap: 9px;
+	color: #e5e7eb;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 1.2px;
+}
+
+.license-kicker svg {
+	width: 17px;
+	height: 17px;
+	color: var(--license-red);
+}
+
+.license-status {
+	margin-left: 5px;
+	padding: 4px 7px;
+	border: 1px solid #45484d;
+	border-radius: 2px;
+	color: #b7bbc1;
+	font-size: 9px;
+	letter-spacing: 0.6px;
+}
+
+.license-heading-row {
+	justify-content: space-between;
+	gap: 24px;
+	margin-top: 19px;
+}
+
+.license-heading-row h1 {
+	margin: 0 0 7px;
+	color: #fff;
+	font-size: 32px;
+	font-weight: 720;
+	line-height: 1.15;
+}
+
+.license-heading-row p {
+	margin: 0;
+	color: #b8bdc4;
+	font-size: 14px;
+}
+
+.license-copy-button {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	gap: 9px;
+	min-height: 42px;
+	padding: 0 14px;
+	border: 1px solid var(--license-red);
+	border-radius: 3px;
+	background: var(--license-red);
+	color: #fff;
+	font: inherit;
+	font-size: 13px;
+	font-weight: 650;
+	cursor: pointer;
+	transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.license-copy-button:hover {
+	border-color: #ff555b;
+	background: #ff555b;
+	transform: translateY(-1px);
+}
+
+.license-copy-button:focus-visible,
+.license-contact a:focus-visible {
+	outline: 3px solid #ff9a9e;
+	outline-offset: 3px;
+}
+
+.license-copy-button svg,
+.license-contact a svg {
+	width: 16px;
+	height: 16px;
+}
+
+.license-copy-feedback {
+	display: block;
+	min-height: 16px;
+	margin-top: 8px;
+	color: #ffc5c7;
+	font-size: 12px;
+}
+
+.license-document {
+	padding: 28px 32px 22px;
+	border: 1px solid #e0e3e7;
+	background: #fff;
+	box-shadow: 0 8px 24px rgb(22 28 36 / 4%);
+}
+
+.license-document-meta {
+	justify-content: space-between;
+	gap: 12px;
+	padding-bottom: 13px;
+	border-bottom: 1px solid #e6e8eb;
+	color: var(--license-muted);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.9px;
+}
+
+.license-document h2 {
+	margin: 23px 0 13px;
+	color: var(--license-ink);
+	font-size: 18px;
+	font-weight: 750;
+	line-height: 1.35;
+}
+
+.license-document p {
+	margin: 0 0 13px;
+	color: #414951;
+	font-size: 14px;
+	line-height: 1.75;
+}
+
+.license-document .license-copyright {
+	color: #656e78;
+	font-size: 13px;
+}
+
+.license-document .license-reserved {
+	margin: 20px 0 0;
+	padding-top: 14px;
+	border-top: 1px solid #e6e8eb;
+	color: var(--license-ink);
+	font-weight: 700;
+}
+
+.license-document a {
+	color: #c7242b;
+	text-decoration-color: rgb(199 36 43 / 35%);
+}
+
+.license-contact {
+	align-self: start;
+	margin-top: 8px;
+	padding: 6px 0 8px 19px;
+	border-left: 2px solid var(--license-red);
+}
+
+.license-contact-label {
+	color: #747d87;
+	font-size: 10px;
+	font-weight: 750;
+	letter-spacing: 1px;
+}
+
+.license-contact h2 {
+	margin: 12px 0 8px;
+	color: var(--license-ink);
+	font-size: 18px;
+	line-height: 1.35;
+}
+
+.license-contact p {
+	margin: 0 0 15px;
+	color: #59636e;
+	font-size: 13px;
+	line-height: 1.65;
+}
+
+.license-contact a {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	color: #bf2027;
+	font-size: 13px;
+	font-weight: 700;
+	text-decoration: none;
+}
+
+.license-contact a:hover {
+	color: #8f151b;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+@keyframes license-enter {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@media (max-width: 760px) {
+	.license-page {
+		padding: 28px 16px 48px;
+	}
+
+	.license-layout {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 14px;
+	}
+
+	.license-header {
+		padding: 22px 20px 13px;
+	}
+
+	.license-heading-row {
+		align-items: flex-start;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.license-heading-row h1 {
+		font-size: 28px;
+	}
+
+	.license-document {
+		padding: 22px 20px;
+	}
+
+	.license-contact {
+		margin: 5px 0 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.license-layout {
+		animation: none;
+	}
+
+	.license-copy-button {
+		transition: none;
 	}
 }
