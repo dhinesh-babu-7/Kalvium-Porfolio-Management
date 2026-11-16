@@ -1,5 +1,5 @@
 import "./Footer.css";
-import { FaGithub, FaEnvelope , FaLifeRing } from "react-icons/fa";
+import { FaEnvelope, FaLifeRing } from "react-icons/fa";
 import { NavLink } from "react-router-dom";
 
 function Footer() {
@@ -17,16 +17,6 @@ function Footer() {
                     </p>
 
                     <div className="social-icons">
-                        <a
-                            href="https://github.com/dhinesh-babu-7/Kalvium-Porfolio-Management"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label="GitHub"
-                        >
-                            <FaGithub />
-                            <span>GitHub</span>
-                        </a>
-
                         <a
                             href="mailto:kpm-squad@googlegroups.com"
                             aria-label="Email"
@@ -95,8 +85,12 @@ function Footer() {
                         Privacy
                     </a>
 
-                    <a href="#terms">
+                    <a href="/terms">
                         Terms
+                    </a>
+
+                    <a href="/licence">
+                        Licence
                     </a>
                 </div>
 
@@ -118,7 +112,7 @@ function Footer() {
                 </p>
 
                 <p className="copyright">
-                    © 2026 Kalvium Portfolio. All rights reserved.
+                    © 2026 Ashwath, Dhinesh Babu, Ashwin Raj, Nithyanandharaj (Kalvium Portfolio Management). All rights reserved. Unauthorized copying, cloning, scraping, or creation of derivative works from this platform&apos;s design, UI/UX, or codebase is strictly prohibited without prior written permission.
                 </p>
 
             </div>
